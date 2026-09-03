@@ -318,11 +318,14 @@ def load_fractional_queries(fractional_gold_standard_file, bin_files, labels, op
         options = binning_classes.Options()
     if not options_gs:
         options_gs = binning_classes.Options()
+    if options.genome_to_unique_common:
+        logging.getLogger('amber').critical(
+            '--remove_genomes is unsupported with --fractional-gold-standard in fractional-v1'
+        )
+        exit(1)
     truth_samples = load_fractional_truth_file(fractional_gold_standard_file)
     for sample_id, truth in list(truth_samples.items()):
-        truth = truth.filter_min_length(options.min_length)
-        truth = truth.remove_genomes(options.genome_to_unique_common)
-        truth_samples[sample_id] = truth
+        truth_samples[sample_id] = truth.filter_min_length(options.min_length)
 
     max_workers = min(len(labels), os.cpu_count() or 1) or 1
     pool = ThreadPool(max_workers)

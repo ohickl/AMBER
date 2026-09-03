@@ -128,6 +128,8 @@ Do not pass `-g` together with `--fractional-gold-standard`.
 
 Example 100 kb contig (`70 kb` unique A, `25 kb` unique B, `5 kb` compatible `{A,B}`) placed in an A-matched bin has primary bp purity `(70+5)/100 = 0.75`. Compatible bases do **not** enter genome-specific completeness denominators. Unresolved bases are conservatively non-correct in primary purity.
 
+A predicted bin name does not select the matched genome: a 70/30 A/B chimera has purity 0.70 and matches A even if the BINID is `binB`. `--remove_genomes` is not supported in fractional-v1. `--min_length` drops prediction rows for filtered truth sequences.
+
 See [docs/fractional_truth_scoring.md](docs/fractional_truth_scoring.md) for schema, validation, matching, FARI, and limitations. `amber.py --version` reports the upstream AMBER version and this extension.
 
 # User guide

@@ -111,6 +111,13 @@ def save_metrics(sample_id_to_g_queries_list, df_summary, pd_bins, output_dir, s
 def main(args=None):
     parser = argparse.ArgumentParser(description="AMBER: Assessment of Metagenome BinnERs",
                                      parents=[argparse_parents.PARSER_MULTI2], prog='AMBER')
+    truth_group = parser.add_mutually_exclusive_group(required=True)
+    truth_group.add_argument('-g', '--gold_standard_file', help=argparse_parents.HELP_GOLD_STANDARD_FILE)
+    truth_group.add_argument(
+        '--fractional-gold-standard',
+        dest='fractional_gold_standard',
+        help='Fractional / multi-origin genome truth (opt-in; mutually exclusive with -g)',
+    )
     parser.add_argument('-p', '--filter', help=argparse_parents.HELP_FILTER)
     parser.add_argument('-n', '--min_length', help="Minimum length of sequences", type=int, required=False)
     parser.add_argument('-o', '--output_dir', help="Directory to write the results to", required=True)
@@ -141,8 +148,8 @@ def main(args=None):
     #                      required=False)
 
     args = parser.parse_args(args)
-    if bool(args.gold_standard_file) == bool(getattr(args, 'fractional_gold_standard', None)):
-        parser.error('Provide exactly one of -g/--gold_standard_file or --fractional-gold-standard')
+    if getattr(args, 'fractional_gold_standard', None) and args.remove_genomes:
+        parser.error('--remove_genomes is unsupported with --fractional-gold-standard in fractional-v1')
     output_dir = os.path.abspath(args.output_dir)
     logger = get_logger(output_dir, args.silent)
 
@@ -171,6 +178,8 @@ def main(args=None):
 
     truth_samples = None
     if getattr(args, 'fractional_gold_standard', None):
+        options.skip_gs = True
+        options_gs.skip_gs = True
         sample_id_to_g_queries_list, sample_id_to_t_queries_list, sample_ids_list, truth_samples = load_data.load_fractional_queries(
             args.fractional_gold_standard, args.bin_files, labels, options, options_gs)
         logger.info('Truth model: {}'.format(TRUTH_MODEL_FRACTIONAL))

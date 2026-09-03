@@ -768,11 +768,20 @@ class FractionalGenomeQuery(GenomeQuery):
         self.genome_df = result['genome_df']
         self.truth_summary = result['truth_summary']
         unique_support = result['unique_support']
+        from cami_amber.fractional_metrics import HEATMAP_MAX_CELLS
+        self.heatmap_sdf = pd.DataFrame()
         if unique_support is not None and not unique_support.empty:
-            heat = unique_support.pivot_table(index='BINID', columns='genome_id', values='unique_support_bp', fill_value=0)
-            self.heatmap_sdf = np.log10(heat.where(heat > 0))
-        else:
-            self.heatmap_sdf = pd.DataFrame()
+            n_bins = unique_support['BINID'].nunique()
+            n_genomes = unique_support['genome_id'].nunique()
+            if n_bins * n_genomes <= HEATMAP_MAX_CELLS:
+                heat = unique_support.pivot_table(index='BINID', columns='genome_id', values='unique_support_bp', fill_value=0)
+                self.heatmap_sdf = np.log10(heat.where(heat > 0))
+            else:
+                logging.getLogger('amber').info(
+                    'Skipping unique-bp heatmap for sample {}: {} bins × {} genomes exceeds {}'.format(
+                        self.sample_id, n_bins, n_genomes, HEATMAP_MAX_CELLS
+                    )
+                )
         self.eval_success = True
         return True
 

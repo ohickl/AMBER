@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cami_amber.utils import load_data
-from cami_amber.version import TRUTH_MODEL_FRACTIONAL
+from cami_amber.version import FRACTIONAL_SCHEMA_VERSION, TRUTH_MODEL_FRACTIONAL
 
 KIND_UNIQUE = 'unique'
 KIND_COMPATIBLE = 'compatible'
@@ -75,7 +75,10 @@ class FractionalTruthSample:
     sequences: OrderedDict[str, SequenceTruth]
     genomes: List[str]
     truth_model: str = TRUTH_MODEL_FRACTIONAL
+    schema_version: str = FRACTIONAL_SCHEMA_VERSION
     component_count: int = 0
+    original_sequence_ids: Optional[FrozenSet[str]] = None
+    _genome_agg: Optional[dict] = None
 
     def sequence_ids(self) -> List[str]:
         return list(self.sequences.keys())
@@ -92,25 +95,55 @@ class FractionalTruthSample:
     def unresolved_truth_bp(self) -> int:
         return sum(seq.unresolved_bp for seq in self.sequences.values())
 
+    def unique_truth_seq_units(self, genome_id: str) -> float:
+        return float(self.genome_aggregates()['unique_seq'].get(genome_id, 0.0))
+
     def identifiable_truth_bp(self, genome_id: str) -> int:
-        return sum(seq.unique_bp_for(genome_id) for seq in self.sequences.values())
+        return int(self.genome_aggregates()['identifiable_bp'].get(genome_id, 0))
 
     def compatible_truth_bp_involving(self, genome_id: str) -> int:
-        return sum(
-            c.bp
-            for seq in self.sequences.values()
-            for c in seq.components
-            if c.kind == KIND_COMPATIBLE and genome_id in c.genome_ids
-        )
+        return int(self.genome_aggregates()['compatible_bp'].get(genome_id, 0))
 
-    def unique_truth_seq_units(self, genome_id: str) -> float:
-        return sum(seq.unique_bp_for(genome_id) / seq.length for seq in self.sequences.values() if seq.length)
+    def genome_aggregates(self) -> dict:
+        if self._genome_agg is not None:
+            return self._genome_agg
+        identifiable_bp = {}
+        unique_seq = {}
+        compatible_bp = {}
+        for seq in self.sequences.values():
+            inv = (1.0 / seq.length) if seq.length else 0.0
+            for component in seq.components:
+                if component.kind == KIND_UNIQUE:
+                    genome_id = next(iter(component.genome_ids))
+                    identifiable_bp[genome_id] = identifiable_bp.get(genome_id, 0) + component.bp
+                    unique_seq[genome_id] = unique_seq.get(genome_id, 0.0) + component.bp * inv
+                elif component.kind == KIND_COMPATIBLE:
+                    for genome_id in component.genome_ids:
+                        compatible_bp[genome_id] = compatible_bp.get(genome_id, 0) + component.bp
+        self._genome_agg = {
+            'identifiable_bp': identifiable_bp,
+            'unique_seq': unique_seq,
+            'compatible_bp': compatible_bp,
+        }
+        return self._genome_agg
+
+    def identifiable_fraction(self, genome_id: str) -> float:
+        unique_bp = self.identifiable_truth_bp(genome_id)
+        compatible_bp = self.compatible_truth_bp_involving(genome_id)
+        den = unique_bp + compatible_bp
+        if den == 0:
+            return float('nan')
+        return unique_bp / den
 
     def filter_min_length(self, min_length: int) -> 'FractionalTruthSample':
+        original = self.original_sequence_ids or frozenset(self.sequences)
         if not min_length:
+            self.original_sequence_ids = original
             return self
         kept = OrderedDict((sid, seq) for sid, seq in self.sequences.items() if seq.length >= min_length)
-        return _rebuild_sample(self.sample_id, kept, self.truth_model)
+        rebuilt = _rebuild_sample(self.sample_id, kept, self.truth_model, self.schema_version)
+        rebuilt.original_sequence_ids = original
+        return rebuilt
 
     def remove_genomes(self, genome_ids: Optional[Sequence[str]]) -> 'FractionalTruthSample':
         if not genome_ids:
@@ -174,7 +207,7 @@ def _merge_like_components(components: Sequence[TruthComponent]) -> List[TruthCo
     return [TruthComponent(bp=bp, kind=kind, genome_ids=gids) for (kind, gids), bp in buckets.items()]
 
 
-def _rebuild_sample(sample_id: str, sequences: OrderedDict[str, SequenceTruth], truth_model: str) -> FractionalTruthSample:
+def _rebuild_sample(sample_id: str, sequences: OrderedDict[str, SequenceTruth], truth_model: str, schema_version: str = FRACTIONAL_SCHEMA_VERSION) -> FractionalTruthSample:
     genomes: List[str] = []
     seen = set()
     component_count = 0
@@ -190,6 +223,7 @@ def _rebuild_sample(sample_id: str, sequences: OrderedDict[str, SequenceTruth], 
         sequences=sequences,
         genomes=genomes,
         truth_model=truth_model,
+        schema_version=schema_version,
         component_count=component_count,
     )
 
@@ -252,13 +286,17 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
         raise FractionalTruthError(
             'Fractional truth @TruthModel must be exactly {} (got {!r})'.format(TRUTH_MODEL_FRACTIONAL, truth_model)
         )
+    schema_version = header.get('VERSION')
+    if schema_version != FRACTIONAL_SCHEMA_VERSION:
+        raise FractionalTruthError(
+            'Fractional truth @Version must be exactly {} (got {!r})'.format(FRACTIONAL_SCHEMA_VERSION, schema_version)
+        )
     missing = [col for col in REQUIRED_COLUMNS if col not in columns_list]
     if missing:
         raise FractionalTruthError('Fractional truth missing columns: {}'.format(', '.join(missing)))
     col_index = {name: i for i, name in enumerate(columns_list)}
 
     sequences: OrderedDict[str, SequenceTruth] = OrderedDict()
-    seen_rows = set()
     genomes: List[str] = []
     seen_genomes = set()
     component_count = 0
@@ -286,15 +324,22 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
             kind = fields[col_index['COMPONENT_TYPE']].strip()
             genome_ids = _parse_genome_ids(fields[col_index['GENOME_IDS']], line_no + 1)
             _validate_component(kind, genome_ids, bp, line_no + 1)
-            row_key = (sequence_id, kind, tuple(sorted(genome_ids)), bp)
-            if row_key in seen_rows:
-                raise FractionalTruthError('Duplicate component row for {} at file line {}'.format(sequence_id, line_no + 1))
-            seen_rows.add(row_key)
             if sequence_id not in sequences:
                 sequences[sequence_id] = SequenceTruth(sequence_id=sequence_id, length=length, components=[])
             elif sequences[sequence_id].length != length:
                 raise FractionalTruthError('Inconsistent _LENGTH for {} at file line {}'.format(sequence_id, line_no + 1))
-            sequences[sequence_id].components.append(TruthComponent(bp=bp, kind=kind, genome_ids=genome_ids))
+            existing = None
+            for component in sequences[sequence_id].components:
+                if component.kind == kind and component.genome_ids == genome_ids:
+                    existing = component
+                    break
+            if existing is not None:
+                sequences[sequence_id].components = [
+                    TruthComponent(bp=c.bp + bp, kind=c.kind, genome_ids=c.genome_ids) if c is existing else c
+                    for c in sequences[sequence_id].components
+                ]
+            else:
+                sequences[sequence_id].components.append(TruthComponent(bp=bp, kind=kind, genome_ids=genome_ids))
             component_count += 1
             for genome_id in sorted(genome_ids):
                 if genome_id not in seen_genomes:
@@ -314,7 +359,9 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
         sequences=sequences,
         genomes=genomes,
         truth_model=truth_model,
+        schema_version=schema_version,
         component_count=component_count,
+        original_sequence_ids=frozenset(sequences),
     )
 
 

@@ -316,6 +316,11 @@ def get_labels_genome():
              (utils_labels.RI_BY_SEQ, utils_labels.TOOLTIP_RI_BY_SEQ),
              (utils_labels.ARI_BY_BP, utils_labels.TOOLTIP_ARI_BY_BP),
              (utils_labels.ARI_BY_SEQ, utils_labels.TOOLTIP_ARI_BY_SEQ),
+             (utils_labels.FARI_SEQ, utils_labels.TOOLTIP_FARI_SEQ),
+             (utils_labels.FARI_BP, utils_labels.TOOLTIP_FARI_BP),
+             (utils_labels.TRUTH_UNIQUE_FRACTION, utils_labels.TOOLTIP_TRUTH_UNIQUE_FRACTION),
+             (utils_labels.TRUTH_COMPATIBLE_FRACTION, utils_labels.TOOLTIP_TRUTH_COMPATIBLE_FRACTION),
+             (utils_labels.TRUTH_UNRESOLVED_FRACTION, utils_labels.TOOLTIP_TRUTH_UNRESOLVED_FRACTION),
              (utils_labels.AVG_PRECISION_BP, utils_labels.TOOLTIP_AVG_PRECISION_BP),
              (utils_labels.AVG_PRECISION_BP_SEM, utils_labels.TOOLTIP_AVG_PRECISION_BP_SEM),
              (utils_labels.AVG_PRECISION_SEQ, utils_labels.TOOLTIP_AVG_PRECISION_SEQ),
@@ -409,6 +414,11 @@ def create_table_html(df_summary, is_taxonomic=False, include_cami1=False):
                 utils_labels.ARI_BY_SEQ,
                 utils_labels.PERCENTAGE_ASSIGNED_BPS,
                 utils_labels.PERCENTAGE_ASSIGNED_SEQS]
+    if 'fari_seq' in df_summary.index:
+        metrics2 += [utils_labels.FARI_SEQ, utils_labels.FARI_BP,
+                     utils_labels.TRUTH_UNIQUE_FRACTION,
+                     utils_labels.TRUTH_COMPATIBLE_FRACTION,
+                     utils_labels.TRUTH_UNRESOLVED_FRACTION]
     if is_taxonomic:
         metrics2.append(utils_labels.UNIFRAC_BP)
         metrics2.append(utils_labels.UNIFRAC_SEQ)
@@ -651,6 +661,15 @@ def create_rankings_table(df_summary, show_rank=False):
                utils_labels.ARI_BY_BP,
                utils_labels.PERCENTAGE_ASSIGNED_BPS,
                utils_labels.ACCURACY_PER_BP]
+    if 'fari_seq' in df_summary.columns:
+        columns = [utils_labels.AVG_PRECISION_BP,
+                   utils_labels.AVG_RECALL_BP,
+                   utils_labels.PRECISION_PER_BP,
+                   utils_labels.RECALL_PER_BP,
+                   utils_labels.FARI_SEQ,
+                   utils_labels.FARI_BP,
+                   utils_labels.PERCENTAGE_ASSIGNED_BPS,
+                   utils_labels.ACCURACY_PER_BP]
     if show_rank:
         columns.insert(0, utils_labels.RANK)
     labels_dict = utils_labels.LABELS.copy()

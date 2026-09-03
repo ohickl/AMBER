@@ -5,8 +5,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from cami_amber.binning_classes import Metrics
-from cami_amber.fractional_metrics import MATCH_COMPATIBLE_TIE, compute_fari, compute_sample_metrics
+from cami_amber.fractional_metrics import MATCH_COMPATIBLE_TIE, FractionalPredictionError, compute_sample_metrics
 from test.fractional.helpers import genome_ids_json, load_assignments, load_truth_from_rows
 
 
@@ -162,43 +161,88 @@ class TestFractionalMetrics(unittest.TestCase):
         with self.assertRaises(Exception):
             load_assignments('s1', [{'SEQUENCEID': 'missing', 'BINID': 'b'}], truth)
 
-    def test_fari_hard_equals_sklearn(self):
-        labels_true = np.array([0, 0, 1, 1, 1, 2])
-        labels_pred = np.array([1, 1, 0, 0, 0, 2])
-        k = 3
-        n = len(labels_true)
-        U = np.zeros((n, k))
-        V = np.zeros((n, k))
-        U[np.arange(n), labels_true] = 1
-        V[np.arange(n), labels_pred] = 1
-        fari = compute_fari(U, V)
-        confusion = pd.DataFrame({
-            'BINID': labels_pred,
-            'genome_id': labels_true,
-            'n': 1,
-        }).groupby(['BINID', 'genome_id'], as_index=False).sum()
-        _ri, ari = Metrics.compute_rand_index(confusion, 'BINID', 'genome_id', 'n')
-        self.assertAlmostEqual(fari, ari, places=12)
+    def test_repeated_unique_components_accumulate_membership(self):
+        result = self._run(
+            [
+                _row('c1', 100, 40, 'unique', ['A']),
+                _row('c1', 100, 30, 'unique', ['A']),
+                _row('c1', 100, 30, 'unique', ['B']),
+            ],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binA'}],
+        )
+        self.assertAlmostEqual(result['precision_df'].iloc[0]['precision_bp'], 0.70)
+        self.assertEqual(result['precision_df'].iloc[0]['unique_tp_length'], 70)
 
-    def test_fari_reflexive(self):
-        U = np.array([[0.7, 0.3], [1.0, 0.0], [0.2, 0.8]])
-        self.assertAlmostEqual(compute_fari(U, U), 1.0, places=12)
+    def test_identifiable_fraction_not_assembly_length(self):
+        result = self._run(
+            [
+                _row('tiny', 10, 10, 'unique', ['A']),
+                _row('big', 1000, 1000, 'unique', ['B']),
+            ],
+            [{'SEQUENCEID': 'tiny', 'BINID': 'binA'}, {'SEQUENCEID': 'big', 'BINID': 'binB'}],
+        )
+        a_bin = result['precision_df'][result['precision_df']['matched_genome_id'] == 'A'].iloc[0]
+        self.assertAlmostEqual(a_bin['matched_genome_identifiable_fraction'], 1.0)
+        self.assertNotAlmostEqual(a_bin['matched_genome_identifiable_fraction'], 10 / 1010)
 
-    def test_fari_label_permutation(self):
-        U = np.array([[0.7, 0.3], [1.0, 0.0], [0.2, 0.8]])
-        V = np.array([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        Vperm = V[:, [1, 0]]
-        self.assertAlmostEqual(compute_fari(U, V), compute_fari(U, Vperm), places=12)
+    def test_min_length_drops_short_prediction(self):
+        from cami_amber.fractional_truth import load_fractional_truth_file, write_fractional_truth
+        fd, path = tempfile.mkstemp(suffix='.tsv')
+        os.close(fd)
+        try:
+            write_fractional_truth(path, 's1', [
+                _row('short', 10, 10, 'unique', ['A']),
+                _row('long', 100, 100, 'unique', ['B']),
+            ])
+            truth = load_fractional_truth_file(path)['s1'].filter_min_length(50)
+            assignments = load_assignments('s1', [
+                {'SEQUENCEID': 'short', 'BINID': 'b'},
+                {'SEQUENCEID': 'long', 'BINID': 'b'},
+            ], truth)
+            self.assertEqual(list(assignments['SEQUENCEID']), ['long'])
+        finally:
+            os.remove(path)
 
-    def test_weighted_fari_matches_replication(self):
-        U = np.array([[0.7, 0.3], [1.0, 0.0]])
-        V = np.array([[1.0, 0.0], [0.0, 1.0]])
-        weights = np.array([3, 2], dtype=float)
-        closed = compute_fari(U, V, weights=weights)
-        Urep = np.repeat(U, weights.astype(int), axis=0)
-        Vrep = np.repeat(V, weights.astype(int), axis=0)
-        replicated = compute_fari(Urep, Vrep)
-        self.assertAlmostEqual(closed, replicated, places=12)
+    def test_unknown_prediction_still_fatal_after_min_length(self):
+        from cami_amber.fractional_truth import load_fractional_truth_file, write_fractional_truth
+        fd, path = tempfile.mkstemp(suffix='.tsv')
+        os.close(fd)
+        try:
+            write_fractional_truth(path, 's1', [_row('long', 100, 100, 'unique', ['A'])])
+            truth = load_fractional_truth_file(path)['s1'].filter_min_length(50)
+            with self.assertRaises(FractionalPredictionError):
+                load_assignments('s1', [{'SEQUENCEID': 'ghost', 'BINID': 'b'}], truth)
+        finally:
+            os.remove(path)
+
+    def test_compatible_not_in_completeness(self):
+        result = self._run(
+            [
+                _row('c1', 100, 50, 'unique', ['A']),
+                _row('c1', 100, 50, 'compatible', ['A', 'B']),
+            ],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binA'}],
+        )
+        a = result['genome_df'][result['genome_df']['genome_id'] == 'A'].iloc[0]
+        self.assertEqual(a['identifiable_truth_bp'], 50)
+        self.assertAlmostEqual(a['best_recall_bp'], 1.0)
+        self.assertEqual(a['compatible_truth_bp_involving_genome'], 50)
+
+    def test_unresolved_not_correct(self):
+        result = self._run(
+            [_row('c1', 100, 70, 'unique', ['A']), _row('c1', 100, 30, 'unresolved', [])],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binA'}],
+        )
+        self.assertAlmostEqual(result['precision_df'].iloc[0]['precision_bp'], 0.70)
+        self.assertLess(result['precision_df'].iloc[0]['precision_bp'], 1.0)
+
+    def test_chimera_not_whole_contig_from_a(self):
+        result = self._run(
+            [_row('c1', 100, 70, 'unique', ['A']), _row('c1', 100, 30, 'unique', ['B'])],
+            [{'SEQUENCEID': 'c1', 'BINID': 'anything'}],
+        )
+        self.assertAlmostEqual(result['precision_df'].iloc[0]['precision_bp'], 0.70)
+        self.assertNotAlmostEqual(result['precision_df'].iloc[0]['precision_bp'], 1.0)
 
 
 if __name__ == '__main__':

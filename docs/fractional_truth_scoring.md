@@ -1,11 +1,17 @@
 # Fractional / multi-origin truth scoring
 
 **Truth model:** `fractional-origin-v1`  
+**Schema version:** `@Version:0.1.0` (required; distinct from the truth-model tag)  
 **Scoring model:** `scoring-model-v1`  
-**FARI implementation:** `fari-frobenius-v1`  
+**FARI implementation:** `fari-andrews-2022-v1`  
+**FARI reference:** `its-likeli-jeff/FARI` `R/fari.R` commit `9f2e7e8769120a26d8456242ba5ed77bf539f2c2`; Andrews, Browne & Hvingelby, *Journal of Classification* 2022, DOI 10.1007/s00357-021-09407-3  
 **Upstream base:** AMBER 2.0.8 (GPL-3.0-or-later)
 
-This document specifies the opt-in evaluator in this fork. Standard AMBER with `-g` is unchanged.
+These metrics are a **fork extension**, not official CAMI/AMBER metrics.
+
+Standard AMBER with `-g` is unchanged.
+
+---
 
 ## Schema
 
@@ -24,40 +30,71 @@ This document specifies the opt-in evaluator in this fork. Standard AMBER with `
 | compatible | >= 2 distinct | Purity-correct if the bin match is in the set; not in primary completeness |
 | unresolved | `[]` | Conservatively non-correct in primary purity |
 
-Invariants: positive integer `COMPONENT_BP`; per-sequence `sum(COMPONENT_BP) == _LENGTH`; no duplicate component rows; prediction sequences must be a subset of the truth universe; duplicate prediction assignments and blank BINID are fatal.
+Repeated rows with the same `(SEQUENCEID, COMPONENT_TYPE, genome set)` are **merged by summing `COMPONENT_BP`** (composition table, not genomic coordinates). After merge, `sum(COMPONENT_BP)` must equal `_LENGTH`.
 
-## Matching
+---
 
-`compatible_support_bp[b,g]` sums component bp of sequences in bin `b` for which `g` is allowed (unique or compatible).
+## Matching (predicted BINID has no truth meaning)
 
-`unique_support_bp[b,g]` sums unique-origin bp only.
+A predicted bin name such as `binB` does **not** force a match to genome B.
 
-Match: max compatible support, then unique-support tie-break. Remaining ties are `match_status=compatible_tie` with `matched_genome_id=NA`. Purity remains defined; the bin cannot recover a genome.
+`correct_bp[b] = max_g compatible_support_bp[b,g]`.
 
-## Purity and completeness
+A lone contig `70 unique A + 30 unique B` therefore matches **A** and has purity **0.70** even if the predicted BINID is `binB`.
 
-- `precision_bp = max_g compatible_support_bp / bin total bp`
-- `precision_bp_resolved` omits unresolved bp from the denominator
-- `precision_seq` uses `compatible_bp / length` summed over contigs in the bin
-- Completeness uses uniquely attributable truth only
-- Weighted recall chooses, per genome, the bin with greatest unique support
+A fully compatible `{A,B}` contig may have purity 1 with `match_status=compatible_tie` and **must not** recover A or B.
 
-Compatible `{A,B}` is set-valued uncertainty, not 50/50 ancestry.
+---
+
+## Purity, completeness, recovered genomes
+
+- Primary purity uses max compatible support over physical bin bp.
+- `precision_bp_resolved` omits unresolved bp from the denominator.
+- Completeness uses uniquely attributable truth only.
+- Compatible-tie bins have NA recall and cannot count as recovered genomes.
+- Zero-identifiable genomes have completeness NA.
+- Thresholds use upstream AMBER's strict `>` comparisons.
+- Per-genome and per-bin `identifiable_fraction` is `unique(g) / (unique(g) + compatible involving g)`, **not** unique/assembly.
+
+---
+
+## `min_length`
+
+Filtering removes entire sequences from the **evaluation** universe. Prediction rows for those IDs are dropped. A prediction ID that was **never** in the original truth file remains fatal.
+
+## `remove_genomes`
+
+**Unsupported** with `--fractional-gold-standard` in fractional-v1 (fail-fast). Use standard `-g` mode for genome exclusion.
+
+---
 
 ## FARI
 
-Sequence FARI uses the Frobenius / Hubert–Arabie formula of Andrews et al. (Journal of Classification 2022, DOI 10.1007/s00357-021-09407-3). Only sequences whose entire length is unique-origin are included. Compatible/unresolved sequences are excluded (not converted to 0.5/0.5).
+Eligible sequences: assigned, 100% unique-origin (no compatible, no unresolved). Coverage is reported as `fari_seq_n_sequences`, `fari_sequence_fraction`, `fari_bp_fraction`.
 
-bp-weighted FARI is the same closed form with sequence-length weights and is tested against explicit row replication.
+Bonding matrices `A = U Uᵀ`, `B = V Vᵀ` are **not** materialized. Sufficient statistics:
 
-Hard one-hot memberships reduce to AMBER `Metrics.compute_rand_index` ARI.
+```
+sA = ||Uᵀ 1||²    qA = ||Uᵀ U||_F²    qAB = ||Uᵀ V||_F²    tA = Σ_i ||u_i||²
+```
 
-Independent oracle used in tests: AMBER's own hard ARI plus replication equivalence. R `MoEClust::FARI` was not executed in this environment.
+and the `Na`, `Nb`, FRI, expected-FRI, FARI equations of `R/fari.R`.
 
-## `min_length` and `remove_genomes`
+bp-weighted FARI uses the same equations with conceptual row replication by integer length `w_i`:
 
-`min_length` drops entire sequences. Removing genome `g` turns unique `{g}` into unresolved for scoring, collapses compatible `{g,h}` to unique `{h}`, and turns compatible sets whose candidates are all removed into unresolved.
+```
+n = Σ w_i
+Uᵀ w,  Uᵀ diag(w) U,  trace terms Σ w_i ||u_i||²
+```
+
+Legacy Rand/ARI and CAMI1 completeness fields are **NA** in fractional mode. HTML ranks FARI, not ARI.
+
+---
 
 ## Limitations
 
-See the implementation plan: resolver quality, identifiable-only completeness, FARI eligibility, and the requirement to label these metrics as fork extensions in publications.
+- Completeness measures identifiable unique-origin recovery only.
+- Compatible sequence is set-valued, not 50/50 ancestry.
+- FARI v1 excludes compatible/unresolved sequences.
+- Fractional mode does not synthesize gold-standard-vs-self.
+- Keep a standard AMBER `-g` run for external comparability.

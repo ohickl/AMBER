@@ -52,11 +52,26 @@ class TestFractionalTruthParser(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_duplicate_row(self):
+    def test_duplicate_same_genome_components_are_merged(self):
         path = self._write([
-            'c1\t10\t5\tunique\t["A"]',
-            'c1\t10\t5\tunique\t["A"]',
+            'c1\t100\t40\tunique\t["A"]',
+            'c1\t100\t30\tunique\t["A"]',
+            'c1\t100\t30\tunique\t["B"]',
         ])
+        try:
+            sample = load_fractional_truth_file(path)['s1']
+            unique_a = sample.sequences['c1'].unique_bp_for('A')
+            self.assertEqual(unique_a, 70)
+        finally:
+            os.remove(path)
+
+    def test_wrong_schema_version(self):
+        fd, path = tempfile.mkstemp(suffix='.tsv')
+        os.close(fd)
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write('@Version:9.9.9\n@SampleID:s1\n@TruthModel:fractional-origin-v1\n')
+            handle.write('@@SEQUENCEID\t_LENGTH\tCOMPONENT_BP\tCOMPONENT_TYPE\tGENOME_IDS\n')
+            handle.write('c1\t10\t10\tunique\t["A"]\n')
         try:
             with self.assertRaises(FractionalTruthError):
                 load_fractional_truth_file(path)
