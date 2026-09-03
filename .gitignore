@@ -111,3 +111,7 @@ venv.bak/
 *.pyc
 tmp/
 ignore/
+
+# Extra files under docs/ stay local; keep the published scoring spec
+docs/*
+!docs/fractional_truth_scoring.md
