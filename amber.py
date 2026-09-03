@@ -22,7 +22,7 @@ from cami_amber import binning_classes
 from cami_amber.utils import load_data
 from cami_amber.utils import argparse_parents
 from cami_amber.utils import labels as utils_labels
-from cami_amber.version import __version__
+from cami_amber.version import __version__, __upstream_version__, __extension_version__, TRUTH_MODEL_FRACTIONAL
 import argparse
 import errno
 import logging
@@ -119,7 +119,12 @@ def main(args=None):
     parser.add_argument('--colors', help="Color indices", required=False)
     parser.add_argument('--silent', help='Silent mode', action='store_true')
     parser.add_argument('--skip_gs', help='Skip gold standard evaluation vs itself', action='store_true')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__)
+    parser.add_argument(
+        '-v', '--version', action='version',
+        version='%(prog)s {} (upstream AMBER {}; extension {})'.format(
+            __version__, __upstream_version__, __extension_version__
+        )
+    )
 
     group_g = parser.add_argument_group('genome binning-specific arguments')
     group_g.add_argument('-x', '--min_completeness', help=argparse_parents.HELP_THRESHOLDS_COMPLETENESS, required=False)
@@ -136,6 +141,8 @@ def main(args=None):
     #                      required=False)
 
     args = parser.parse_args(args)
+    if bool(args.gold_standard_file) == bool(getattr(args, 'fractional_gold_standard', None)):
+        parser.error('Provide exactly one of -g/--gold_standard_file or --fractional-gold-standard')
     output_dir = os.path.abspath(args.output_dir)
     logger = get_logger(output_dir, args.silent)
 
@@ -162,8 +169,14 @@ def main(args=None):
                                          ncbi_dir=args.ncbi_dir,
                                          skip_gs=args.skip_gs)
 
-    sample_id_to_g_queries_list, sample_id_to_t_queries_list, sample_ids_list = load_data.load_queries(
-        args.gold_standard_file, args.bin_files, labels, options, options_gs)
+    truth_samples = None
+    if getattr(args, 'fractional_gold_standard', None):
+        sample_id_to_g_queries_list, sample_id_to_t_queries_list, sample_ids_list, truth_samples = load_data.load_fractional_queries(
+            args.fractional_gold_standard, args.bin_files, labels, options, options_gs)
+        logger.info('Truth model: {}'.format(TRUTH_MODEL_FRACTIONAL))
+    else:
+        sample_id_to_g_queries_list, sample_id_to_t_queries_list, sample_ids_list = load_data.load_queries(
+            args.gold_standard_file, args.bin_files, labels, options, options_gs)
 
     coverages_pd = load_data.open_coverages(args.genome_coverage)
 
@@ -172,6 +185,26 @@ def main(args=None):
     df_summary, pd_bins = evaluate.evaluate_samples_queries(sample_id_to_g_queries_list, sample_id_to_t_queries_list)
 
     save_metrics(sample_id_to_g_queries_list, df_summary, pd_bins, output_dir, args.stdout)
+    if truth_samples:
+        receipt_rows = []
+        genome_rows = []
+        for sample_id, queries in sample_id_to_g_queries_list.items():
+            for query in queries:
+                if hasattr(query, 'truth_summary') and query.truth_summary:
+                    receipt_rows.append(query.truth_summary)
+                if hasattr(query, 'genome_df') and query.genome_df is not None and not query.genome_df.empty:
+                    gdf = query.genome_df.copy()
+                    gdf['sample_id'] = sample_id
+                    gdf[utils_labels.TOOL] = query.label
+                    genome_rows.append(gdf)
+        if receipt_rows:
+            pd.DataFrame(receipt_rows).drop_duplicates(subset=['sample_id']).to_csv(
+                os.path.join(output_dir, 'fractional_truth_summary.tsv'), sep='\t', index=False
+            )
+        if genome_rows:
+            pd.concat(genome_rows, ignore_index=True, sort=False).to_csv(
+                os.path.join(output_dir, 'genome_metrics_fractional.tsv'), sep='\t', index=False
+            )
 
     plots.plot_genome_binning(args.colors,
                               sample_id_to_g_queries_list,

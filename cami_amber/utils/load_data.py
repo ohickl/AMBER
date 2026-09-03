@@ -309,3 +309,44 @@ def load_queries(gold_standard_file, bin_files, labels, options=None, options_gs
                 options.only_genome_queries = options_gs.only_genome_queries = False
 
     return sample_id_to_g_queries_list, sample_id_to_t_queries_list, [metadata[2]['SAMPLEID'] for metadata in samples_metadata_gs]
+
+
+def load_fractional_queries(fractional_gold_standard_file, bin_files, labels, options=None, options_gs=None):
+    from cami_amber.fractional_truth import load_fractional_truth_file
+
+    if not options:
+        options = binning_classes.Options()
+    if not options_gs:
+        options_gs = binning_classes.Options()
+    truth_samples = load_fractional_truth_file(fractional_gold_standard_file)
+    for sample_id, truth in list(truth_samples.items()):
+        truth = truth.filter_min_length(options.min_length)
+        truth = truth.remove_genomes(options.genome_to_unique_common)
+        truth_samples[sample_id] = truth
+
+    max_workers = min(len(labels), os.cpu_count() or 1) or 1
+    pool = ThreadPool(max_workers)
+    try:
+        metadata_all = pool.map(read_metadata, zip(bin_files, labels))
+        pool.close()
+    except BaseException:
+        logging.getLogger('amber').error('An error occurred. Exiting.')
+        exit(1)
+
+    sample_id_to_g_queries_list = defaultdict(list)
+    sample_id_to_t_queries_list = defaultdict(list)
+    options.only_taxonomic_queries = options_gs.only_taxonomic_queries = False
+    options.only_genome_queries = options_gs.only_genome_queries = True
+
+    for query, label in zip(metadata_all, labels):
+        for metadata in query:
+            sample_id = metadata[2]['SAMPLEID']
+            if sample_id not in truth_samples:
+                logging.getLogger('amber').critical(
+                    "Sample ID {} in {} not found in the fractional gold standard.".format(sample_id, label)
+                )
+                exit(1)
+            g_query = binning_classes.FractionalGenomeQuery(label, sample_id, options, metadata, truth_samples[sample_id])
+            sample_id_to_g_queries_list[sample_id].append(g_query)
+
+    return sample_id_to_g_queries_list, sample_id_to_t_queries_list, list(truth_samples.keys()), truth_samples

@@ -22,7 +22,8 @@ def evaluate_sample(queries_list):
         query.compute_metrics()
         if not query.is_gs:
             query.destroyer()
-    queries_list[0].gold_standard.destroyer()
+    if queries_list and queries_list[0].gold_standard is not None:
+        queries_list[0].gold_standard.destroyer()
 
 
 def evaluate_samples_queries(sample_id_to_g_queries_list, sample_id_to_t_queries_list):

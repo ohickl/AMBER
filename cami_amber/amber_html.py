@@ -448,7 +448,7 @@ def create_table_html(df_summary, is_taxonomic=False, include_cami1=False):
     first_metrics = True
     for metrics, metrics_label in zip(all_metrics, all_metrics_labels):
         html.write('<p style="margin-bottom: auto"><b>{}</b></p>'.format(metrics_label))
-        df_metrics = df_summary.loc[metrics]
+        df_metrics = df_summary.reindex(metrics)
         sorted_columns = df_metrics.columns.tolist()
         df_metrics = df_metrics.loc[:, sorted_columns]
 
@@ -655,7 +655,7 @@ def create_rankings_table(df_summary, show_rank=False):
         columns.insert(0, utils_labels.RANK)
     labels_dict = utils_labels.LABELS.copy()
     labels_dict[utils_labels.RANK] = 'Taxonomic rank'
-    pd_rankings = df_summary[columns].rename(columns=labels_dict).round(decimals=5).reset_index()
+    pd_rankings = df_summary.reindex(columns=columns).rename(columns=labels_dict).round(decimals=5).reset_index()
 
     def create_table_column(field):
         return TableColumn(title=field, field=field, width=100)
@@ -878,8 +878,19 @@ def create_html(df_summary, pd_bins, labels, sample_ids_list, options, desc_text
 
     tabs = Tabs(tabs=tabs_list)
 
-    title = create_title_div("main", "AMBER: Assessment of Metagenome BinnERs", " produced on {0} with AMBER version {1} ".format(
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), __version__))
+    truth_note = ''
+    if 'truth_model' in df_summary.columns and df_summary['truth_model'].notna().any():
+        models = sorted(set(df_summary['truth_model'].dropna().astype(str)))
+        truth_note = ' Truth model: {}. Completeness uses identifiable unique-origin bp. FARI is not ARI.'.format(
+            ', '.join(models)
+        )
+    title = create_title_div(
+        "main",
+        "AMBER: Assessment of Metagenome BinnERs",
+        " produced on {0} with AMBER version {1}.{2}".format(
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), __version__, truth_note
+        ),
+    )
 
     if desc_text:
         data_desc_div = Div(text="""<div style="text-align:left;font-size: 11pt;font-weight: bold;">{}""".format(desc_text))

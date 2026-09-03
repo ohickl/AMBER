@@ -718,6 +718,94 @@ class GenomeQuery(Query):
         self.plot_heat_maps()
 
 
+class FractionalGenomeQuery(GenomeQuery):
+    binning_type = 'genome'
+
+    def __init__(self, label, sample_id, options, metadata, truth, is_gs=False):
+        super().__init__(label, sample_id, options, metadata, is_gs)
+        self.fractional_truth = truth
+        self.genome_df = pd.DataFrame()
+        self.truth_summary = {}
+        self.fractional_result = None
+
+    @property
+    def df(self):
+        if not self._df.empty:
+            return self._df
+        query_df = load_data.load_sample(self.metadata)
+        if 'BINID' in query_df.columns:
+            query_df = query_df.drop_duplicates(['SEQUENCEID', 'BINID'])
+        self._df = query_df
+        return query_df
+
+    def compute_metrics(self):
+        from cami_amber import fractional_metrics as fm
+
+        logging.getLogger('amber').info(
+            'Evaluating {}, sample {}, fractional genome binning'.format(self.label, self.sample_id)
+        )
+        assignments = fm.load_prediction_assignments(self.metadata, self.fractional_truth)
+        result = fm.compute_sample_metrics(
+            self.fractional_truth,
+            assignments,
+            min_completeness=self.options.min_completeness,
+            max_contamination=self.options.max_contamination,
+            filter_tail_percentage=self.options.filter_tail_percentage,
+        )
+        self.fractional_result = result
+        metrics_map = result['metrics']
+        for key, value in metrics_map.items():
+            if hasattr(self.metrics, key):
+                setattr(self.metrics, key, value)
+        self.precision_df = result['precision_df'].copy()
+        if not self.precision_df.empty:
+            self.precision_df = self.precision_df.set_index('BINID')
+        self.precision_df[utils_labels.TOOL] = self.label
+        self.precision_df['sample_id'] = self.sample_id
+        self.recall_df = result['genome_df'].rename(columns={'best_recall_bp': 'recall_bp', 'best_unique_tp_bp': 'genome_length'})
+        self.recall_df['total_length'] = self.recall_df['identifiable_truth_bp']
+        self.recall_df_cami1 = self.recall_df.copy()
+        self.genome_df = result['genome_df']
+        self.truth_summary = result['truth_summary']
+        unique_support = result['unique_support']
+        if unique_support is not None and not unique_support.empty:
+            heat = unique_support.pivot_table(index='BINID', columns='genome_id', values='unique_support_bp', fill_value=0)
+            self.heatmap_sdf = np.log10(heat.where(heat > 0))
+        else:
+            self.heatmap_sdf = pd.DataFrame()
+        self.eval_success = True
+        return True
+
+    def get_metrics_df(self):
+        df = super().get_metrics_df()
+        extra = self.fractional_result['metrics'] if self.fractional_result else {}
+        for key, value in extra.items():
+            if key not in df.columns:
+                df[key] = value
+        return df
+
+    def plot_heat_maps(self):
+        if self.heatmap_sdf is None or getattr(self.heatmap_sdf, 'empty', True):
+            return
+        super().plot_heat_maps()
+
+    def plot_recall_vs_genome_size(self):
+        fig, axs = plt.subplots(figsize=(5, 4.5))
+        df_sorted = self.recall_df[['total_length', 'recall_bp']].replace([np.inf, -np.inf], np.nan).dropna()
+        if df_sorted.empty:
+            plt.close(fig)
+            return
+        df_sorted = df_sorted.sort_values(by=['total_length'])
+        axs.scatter(np.log(df_sorted['total_length'].clip(lower=1)), df_sorted['recall_bp'], marker='o')
+        axs.set_ylim([0.0, 1.0])
+        axs.set_title(self.label, fontsize=12)
+        plt.ylabel('Completeness per genome (identifiable truth bp)', fontsize=12)
+        plt.xlabel('Identifiable genome size [log(# bp)]', fontsize=12)
+        fig.savefig(os.path.join(self.options.output_dir, 'genome', self.label, 'completeness_vs_genome_size_' + self.sample_id + '.png'), dpi=200, format='png', bbox_inches='tight')
+        fig.savefig(os.path.join(self.options.output_dir, 'genome', self.label, 'completeness_vs_genome_size_' + self.sample_id + '.pdf'), dpi=200, format='pdf', bbox_inches='tight')
+        plt.close(fig)
+
+
 class Prediction:
     def __init__(self):
         pass

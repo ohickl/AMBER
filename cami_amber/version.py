@@ -1,1 +1,6 @@
-__version__ = '2.0.8'
+__upstream_version__ = '2.0.8'
+__extension_version__ = 'fractional-truth-1'
+__version__ = '2.0.8+fractional.1'
+TRUTH_MODEL_FRACTIONAL = 'fractional-origin-v1'
+SCORING_MODEL_VERSION = 'scoring-model-v1'
+FARI_IMPLEMENTATION_VERSION = 'fari-frobenius-v1'

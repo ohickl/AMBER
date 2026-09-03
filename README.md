@@ -110,6 +110,26 @@ docker build -t amber .
 See bellow an example of how to [run AMBER using Docker](#running-amberpy-using-docker).
 
 
+# Fractional / multi-origin assembly truth (fork extension)
+
+This fork keeps **standard AMBER 2.0.8 behaviour as the default**. Fractional scoring is opt-in and is **not** a CAMI-standard gold-truth format.
+
+Use it when an assembly contig can contain uniquely attributable sequence from more than one source genome, regions compatible with several genomes, and unresolved sequence. AMBER does **not** infer origin; it only scores already-resolved component tables.
+
+```bash
+amber.py \
+  --fractional-gold-standard truth.fractional.tsv \
+  -l tool \
+  prediction.binning \
+  -o output/
+```
+
+Do not pass `-g` together with `--fractional-gold-standard`.
+
+Example 100 kb contig (`70 kb` unique A, `25 kb` unique B, `5 kb` compatible `{A,B}`) placed in an A-matched bin has primary bp purity `(70+5)/100 = 0.75`. Compatible bases do **not** enter genome-specific completeness denominators. Unresolved bases are conservatively non-correct in primary purity.
+
+See [docs/fractional_truth_scoring.md](docs/fractional_truth_scoring.md) for schema, validation, matching, FARI, and limitations. `amber.py --version` reports the upstream AMBER version and this extension.
+
 # User guide
 
 ## Input

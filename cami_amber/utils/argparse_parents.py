@@ -41,6 +41,9 @@ PARSER_MULTI.add_argument('-l', '--label', help=HELP_LABEL, required=False)
 
 PARSER_MULTI2 = argparse.ArgumentParser(add_help=False)
 PARSER_MULTI2.add_argument("bin_files", nargs='+', help=HELP_QUERY_FILES)
-PARSER_MULTI2.add_argument("-g", "--gold_standard_file", help=HELP_GOLD_STANDARD_FILE, required=True)
+PARSER_MULTI2.add_argument("-g", "--gold_standard_file", help=HELP_GOLD_STANDARD_FILE, required=False)
+PARSER_MULTI2.add_argument('--fractional-gold-standard', dest='fractional_gold_standard',
+                           help='Fractional / multi-origin genome truth (opt-in; mutually exclusive with -g)',
+                           required=False)
 PARSER_MULTI2.add_argument('-l', '--labels', help=HELP_LABELS, required=False)
 
