@@ -768,20 +768,22 @@ class FractionalGenomeQuery(GenomeQuery):
         self.genome_df = result['genome_df']
         self.truth_summary = result['truth_summary']
         unique_support = result['unique_support']
-        from cami_amber.fractional_metrics import HEATMAP_MAX_CELLS
+        from cami_amber.fractional_metrics import HEATMAP_MAX_CELLS, build_identifiable_heatmap
         self.heatmap_sdf = pd.DataFrame()
-        if unique_support is not None and not unique_support.empty:
-            n_bins = unique_support['BINID'].nunique()
-            n_genomes = unique_support['genome_id'].nunique()
-            if n_bins * n_genomes <= HEATMAP_MAX_CELLS:
-                heat = unique_support.pivot_table(index='BINID', columns='genome_id', values='unique_support_bp', fill_value=0)
-                self.heatmap_sdf = np.log10(heat.where(heat > 0))
-            else:
-                logging.getLogger('amber').info(
-                    'Skipping unique-bp heatmap for sample {}: {} bins × {} genomes exceeds {}'.format(
-                        self.sample_id, n_bins, n_genomes, HEATMAP_MAX_CELLS
-                    )
+        n_genomes = max(len(self.fractional_truth.genomes), 1)
+        n_bins = 0 if unique_support is None or unique_support.empty else unique_support['BINID'].nunique()
+        if (n_bins + 1) * n_genomes <= HEATMAP_MAX_CELLS:
+            heat = build_identifiable_heatmap(unique_support, self.fractional_truth)
+            self.heatmap_sdf = np.log10(heat.where(heat > 0))
+            logging.getLogger('amber').info(
+                'Fractional heatmap uses unique/identifiable truth bp only (unassigned identifiable row included; compatible/unresolved omitted)'
+            )
+        else:
+            logging.getLogger('amber').info(
+                'Skipping unique-bp heatmap for sample {}: {} bins × {} genomes exceeds {}'.format(
+                    self.sample_id, n_bins + 1, n_genomes, HEATMAP_MAX_CELLS
                 )
+            )
         self.eval_success = True
         return True
 

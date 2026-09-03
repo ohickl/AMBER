@@ -8,7 +8,9 @@ import pandas as pd
 from cami_amber.binning_classes import Metrics
 from cami_amber.fractional_metrics import (
     MATCH_COMPATIBLE_TIE,
+    UNASSIGNED_IDENTIFIABLE_ROW,
     FractionalPredictionError,
+    build_identifiable_heatmap,
     compute_sample_fari,
     compute_sample_metrics,
 )
@@ -78,6 +80,7 @@ class TestFractionalMetrics(unittest.TestCase):
         bin_row = result['precision_df'].iloc[0]
         self.assertEqual(bin_row['precision_bp'], 1.0)
         self.assertEqual(bin_row['match_status'], MATCH_COMPATIBLE_TIE)
+        self.assertEqual(bin_row['matched_genome_ids'], '["A", "B"]')
         self.assertTrue(np.isnan(bin_row['recall_bp']))
         self.assertEqual(result['recovered'][0]['count'], 0)
         self.assertEqual(result['genome_df'].loc[result['genome_df']['genome_id'] == 'A', 'identifiable_truth_bp'].iloc[0], 0)
@@ -264,7 +267,8 @@ class TestFractionalMetrics(unittest.TestCase):
         ri, ari = Metrics.compute_rand_index(confusion, 'BINID', 'genome_id', 'bp')
         self.assertAlmostEqual(result['metrics']['adjusted_rand_index_bp_identifiable'], ari, places=12)
         self.assertAlmostEqual(result['metrics']['rand_index_bp_identifiable'], ri, places=12)
-        self.assertAlmostEqual(result['metrics']['ari_bp_identifiable_fraction'], 1.0)
+        self.assertAlmostEqual(result['metrics']['ari_bp_participating_fraction_of_assembly'], 1.0)
+        self.assertAlmostEqual(result['metrics']['ari_bp_assignment_fraction_of_identifiable_truth'], 1.0)
 
     def test_length_weighted_fari_is_not_identifiable_bp_ari(self):
         truth_rows = [
@@ -281,12 +285,62 @@ class TestFractionalMetrics(unittest.TestCase):
         result = self._run(truth_rows, pred_rows)
         truth = load_truth_from_rows('s1', truth_rows)
         assignments = load_assignments('s1', pred_rows, truth)
-        weighted_fari, _, _, _ = compute_sample_fari(truth, assignments, weighted=True)
+        weighted_fari, _, _, _, _ = compute_sample_fari(truth, assignments, weighted=True)
         self.assertTrue(np.isfinite(weighted_fari))
         self.assertGreater(
             abs(weighted_fari - result['metrics']['adjusted_rand_index_bp_identifiable']),
             1e-6,
         )
+
+    def test_sem_is_na_for_one_bin_and_one_genome(self):
+        result = self._run(
+            [_row('c1', 100, 100, 'unique', ['A'])],
+            [{'SEQUENCEID': 'c1', 'BINID': 'only'}],
+        )
+        self.assertTrue(np.isnan(result['metrics']['precision_avg_bp_sem']))
+        self.assertTrue(np.isnan(result['metrics']['precision_avg_seq_sem']))
+        self.assertTrue(np.isnan(result['metrics']['recall_avg_bp_sem']))
+        self.assertTrue(np.isnan(result['metrics']['recall_avg_seq_sem']))
+
+    def test_heatmap_columns_sum_to_identifiable_truth(self):
+        result = self._run(
+            [
+                _row('c1', 100, 100, 'unique', ['A']),
+                _row('c2', 50, 50, 'unique', ['B']),
+                _row('c3', 20, 20, 'compatible', ['A', 'B']),
+            ],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binA'}],
+        )
+        truth = load_truth_from_rows('s1', [
+            _row('c1', 100, 100, 'unique', ['A']),
+            _row('c2', 50, 50, 'unique', ['B']),
+            _row('c3', 20, 20, 'compatible', ['A', 'B']),
+        ])
+        heat = build_identifiable_heatmap(result['unique_support'], truth)
+        self.assertIn(UNASSIGNED_IDENTIFIABLE_ROW, heat.index)
+        self.assertAlmostEqual(heat['A'].sum(), 100)
+        self.assertAlmostEqual(heat['B'].sum(), 50)
+        self.assertEqual(heat.loc[UNASSIGNED_IDENTIFIABLE_ROW, 'B'], 50)
+
+    def test_matched_genome_ids_json_allows_comma_in_id(self):
+        result = self._run(
+            [_row('c1', 100, 100, 'compatible', ['A,B', 'C'])],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binX'}],
+        )
+        ids = result['precision_df'].iloc[0]['matched_genome_ids']
+        self.assertEqual(ids, '["A,B", "C"]')
+
+    def test_partial_assignment_coverage_split(self):
+        result = self._run(
+            [
+                _row('c1', 100, 100, 'unique', ['A']),
+                _row('c2', 100, 100, 'unique', ['B']),
+            ],
+            [{'SEQUENCEID': 'c1', 'BINID': 'binA'}],
+        )
+        self.assertAlmostEqual(result['metrics']['ari_bp_participating_fraction_of_assembly'], 0.5)
+        self.assertAlmostEqual(result['metrics']['ari_bp_assignment_fraction_of_identifiable_truth'], 0.5)
+        self.assertAlmostEqual(result['metrics']['fari_seq_assignment_fraction_of_identifiable_truth'], 0.5)
 
     def test_chimera_not_whole_contig_from_a(self):
         result = self._run(

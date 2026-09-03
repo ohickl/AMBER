@@ -129,16 +129,17 @@ class TestFractionalTruthParser(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_remove_genomes_compatible_collapses(self):
+    def test_canonical_component_count_after_merge(self):
         path = self._write([
-            'c1\t100\t70\tunique\t["A"]',
-            'c1\t100\t30\tcompatible\t["A","B"]',
+            'c1\t100\t40\tunique\t["A"]',
+            'c1\t100\t30\tunique\t["A"]',
+            'c1\t100\t30\tunique\t["B"]',
         ])
         try:
-            sample = load_fractional_truth_file(path)['s1'].remove_genomes(['A'])
-            kinds = {(c.kind, tuple(sorted(c.genome_ids)), c.bp) for c in sample.sequences['c1'].components}
-            self.assertIn(('unresolved', (), 70), kinds)
-            self.assertIn(('unique', ('B',), 30), kinds)
+            sample = load_fractional_truth_file(path)['s1']
+            self.assertEqual(sample.input_component_rows, 3)
+            self.assertEqual(sample.component_count, 2)
+            self.assertEqual(sample.summary_row()['canonical_component_count'], 2)
         finally:
             os.remove(path)
 

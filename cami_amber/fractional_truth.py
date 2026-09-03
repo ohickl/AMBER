@@ -77,6 +77,7 @@ class FractionalTruthSample:
     truth_model: str = TRUTH_MODEL_FRACTIONAL
     schema_version: str = FRACTIONAL_SCHEMA_VERSION
     component_count: int = 0
+    input_component_rows: int = 0
     original_sequence_ids: Optional[FrozenSet[str]] = None
     _genome_agg: Optional[dict] = None
 
@@ -145,32 +146,6 @@ class FractionalTruthSample:
         rebuilt.original_sequence_ids = original
         return rebuilt
 
-    def remove_genomes(self, genome_ids: Optional[Sequence[str]]) -> 'FractionalTruthSample':
-        if not genome_ids:
-            return self
-        removed = set(genome_ids)
-        kept: OrderedDict[str, SequenceTruth] = OrderedDict()
-        for sid, seq in self.sequences.items():
-            new_components: List[TruthComponent] = []
-            for component in seq.components:
-                remaining = frozenset(g for g in component.genome_ids if g not in removed)
-                if component.kind == KIND_UNIQUE:
-                    if remaining:
-                        new_components.append(component)
-                    else:
-                        new_components.append(TruthComponent(bp=component.bp, kind=KIND_UNRESOLVED, genome_ids=frozenset()))
-                elif component.kind == KIND_COMPATIBLE:
-                    if len(remaining) >= 2:
-                        new_components.append(TruthComponent(bp=component.bp, kind=KIND_COMPATIBLE, genome_ids=remaining))
-                    elif len(remaining) == 1:
-                        new_components.append(TruthComponent(bp=component.bp, kind=KIND_UNIQUE, genome_ids=remaining))
-                    else:
-                        new_components.append(TruthComponent(bp=component.bp, kind=KIND_UNRESOLVED, genome_ids=frozenset()))
-                else:
-                    new_components.append(component)
-            kept[sid] = SequenceTruth(sequence_id=sid, length=seq.length, components=_merge_like_components(new_components))
-        return _rebuild_sample(self.sample_id, kept, self.truth_model)
-
     def summary_row(self) -> dict:
         assembly = self.assembly_bp()
         unique_bp = self.unique_truth_bp()
@@ -188,6 +163,8 @@ class FractionalTruthSample:
             'compatible_truth_fraction': _safe_div(compatible_bp, assembly),
             'unresolved_truth_fraction': _safe_div(unresolved_bp, assembly),
             'component_count': self.component_count,
+            'canonical_component_count': self.component_count,
+            'input_component_rows': self.input_component_rows,
             'validation_status': 'ok',
             'truth_model': self.truth_model,
         }
@@ -225,6 +202,7 @@ def _rebuild_sample(sample_id: str, sequences: OrderedDict[str, SequenceTruth], 
         truth_model=truth_model,
         schema_version=schema_version,
         component_count=component_count,
+        input_component_rows=component_count,
     )
 
 
@@ -299,7 +277,7 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
     sequences: OrderedDict[str, SequenceTruth] = OrderedDict()
     genomes: List[str] = []
     seen_genomes = set()
-    component_count = 0
+    input_component_rows = 0
     with load_data.open_generic(file_path) as handle:
         for offset, line in enumerate(handle):
             line_no = offset
@@ -340,7 +318,7 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
                 ]
             else:
                 sequences[sequence_id].components.append(TruthComponent(bp=bp, kind=kind, genome_ids=genome_ids))
-            component_count += 1
+            input_component_rows += 1
             for genome_id in sorted(genome_ids):
                 if genome_id not in seen_genomes:
                     seen_genomes.add(genome_id)
@@ -354,13 +332,15 @@ def load_fractional_truth_sample(metadata) -> FractionalTruthSample:
             raise FractionalTruthError(
                 'Component bp sum {} != _LENGTH {} for sequence {}'.format(total, seq.length, seq.sequence_id)
             )
+    canonical_component_count = sum(len(seq.components) for seq in sequences.values())
     return FractionalTruthSample(
         sample_id=sample_id,
         sequences=sequences,
         genomes=genomes,
         truth_model=truth_model,
         schema_version=schema_version,
-        component_count=component_count,
+        component_count=canonical_component_count,
+        input_component_rows=input_component_rows,
         original_sequence_ids=frozenset(sequences),
     )
 

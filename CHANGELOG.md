@@ -7,6 +7,7 @@
 - Compatible `{A,B}` sequence may count toward bin purity for either genome and is excluded from primary identifiable completeness denominators. Predicted BINID strings have no matching semantics.
 - Sequence clustering agreement is FARI (Andrews et al. 2022 / `its-likeli-jeff/FARI` `R/fari.R`) on identifiable contig memberships.
 - Base-pair clustering agreement is ordinary Hubert–Arabie RI/ARI on unique-origin bp (`adjusted_rand_index_bp_identifiable`), not length-weighted fuzzy FARI.
+- ARI coverage is split into participating-of-assembly vs assignment-of-identifiable-truth. SEM is NA when undefined. Heatmap includes `__UNASSIGNED_IDENTIFIABLE__`. `matched_genome_ids` is JSON. `component_count` is post-merge.
 - `--min_length` drops matching prediction rows; IDs absent from the original truth remain fatal.
 - `--remove_genomes` is unsupported in fractional-v1 (fail-fast).
 - Repeated `(sequence, kind, genome-set)` components are merged by summing bp.

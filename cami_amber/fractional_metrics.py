@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -27,6 +28,7 @@ from cami_amber.version import FARI_IMPLEMENTATION_VERSION, SCORING_MODEL_VERSIO
 MATCH_RESOLVED = 'resolved'
 MATCH_COMPATIBLE_TIE = 'compatible_tie'
 MATCH_UNMATCHED = 'unmatched'
+UNASSIGNED_IDENTIFIABLE_ROW = '__UNASSIGNED_IDENTIFIABLE__'
 HEATMAP_MAX_CELLS = 250000
 
 
@@ -50,6 +52,24 @@ def _div(num: float, den: float) -> float:
     return _finite_or_nan(num / den)
 
 
+def _sem(series: pd.Series) -> float:
+    values = series.dropna() if series is not None else pd.Series(dtype=float)
+    if len(values) < 2:
+        return _nan()
+    value = values.sem()
+    if pd.isna(value):
+        return _nan()
+    return float(value)
+
+
+def _genome_ids_json(genome_ids) -> str:
+    if genome_ids is None or (isinstance(genome_ids, float) and pd.isna(genome_ids)):
+        return '[]'
+    if isinstance(genome_ids, str):
+        return json.dumps([genome_ids], ensure_ascii=False)
+    return json.dumps(list(genome_ids), ensure_ascii=False)
+
+
 def load_prediction_assignments(metadata, truth: FractionalTruthSample) -> pd.DataFrame:
     pred_sample_id = metadata[2].get('SAMPLEID')
     if pred_sample_id != truth.sample_id:
@@ -67,6 +87,7 @@ def load_prediction_assignments(metadata, truth: FractionalTruthSample) -> pd.Da
         header=None,
         names=metadata[3],
         dtype=str,
+        keep_default_na=False,
     )
     if 'SEQUENCEID' not in df.columns or 'BINID' not in df.columns:
         raise FractionalPredictionError('Prediction file must contain SEQUENCEID and BINID')
@@ -76,7 +97,7 @@ def load_prediction_assignments(metadata, truth: FractionalTruthSample) -> pd.Da
     if df['SEQUENCEID'].duplicated().any():
         dupes = df.loc[df['SEQUENCEID'].duplicated(), 'SEQUENCEID'].unique().tolist()
         raise FractionalPredictionError('Duplicate prediction assignment for sequences: {}'.format(dupes[:10]))
-    blank = df['BINID'].isna() | (df['BINID'].str.strip() == '') | (df['BINID'] == 'nan')
+    blank = df['BINID'].isna() | (df['BINID'].str.strip() == '')
     if blank.any():
         raise FractionalPredictionError('Blank prediction BINID is fatal in fractional mode')
     original = set(truth.original_sequence_ids) if truth.original_sequence_ids is not None else set(truth.sequences)
@@ -143,7 +164,7 @@ def match_bins(unique_support: pd.DataFrame, compatible_support: pd.DataFrame, b
             'BINID': bin_id,
             'match_status': MATCH_UNMATCHED,
             'matched_genome_id': pd.NA,
-            'matched_genome_ids': '',
+            'matched_genome_ids': '[]',
             'correct_bp': 0,
             'correct_seq_units': 0.0,
         } for bin_id in bin_ids])
@@ -158,7 +179,7 @@ def match_bins(unique_support: pd.DataFrame, compatible_support: pd.DataFrame, b
                 'BINID': bin_id,
                 'match_status': MATCH_RESOLVED,
                 'matched_genome_id': genome_id,
-                'matched_genome_ids': genome_id,
+                'matched_genome_ids': _genome_ids_json([genome_id]),
                 'correct_bp': int(max_bp),
                 'correct_seq_units': float(tied.iloc[0]['compatible_support_seq']),
             })
@@ -176,7 +197,7 @@ def match_bins(unique_support: pd.DataFrame, compatible_support: pd.DataFrame, b
                         'BINID': bin_id,
                         'match_status': MATCH_RESOLVED,
                         'matched_genome_id': genome_id,
-                        'matched_genome_ids': genome_id,
+                        'matched_genome_ids': _genome_ids_json([genome_id]),
                         'correct_bp': int(max_bp),
                         'correct_seq_units': seq_units,
                     })
@@ -186,7 +207,7 @@ def match_bins(unique_support: pd.DataFrame, compatible_support: pd.DataFrame, b
             'BINID': bin_id,
             'match_status': MATCH_COMPATIBLE_TIE,
             'matched_genome_id': pd.NA,
-            'matched_genome_ids': ','.join(genomes),
+            'matched_genome_ids': _genome_ids_json(genomes),
             'correct_bp': int(max_bp),
             'correct_seq_units': float(tied['compatible_support_seq'].max()),
         })
@@ -197,7 +218,7 @@ def match_bins(unique_support: pd.DataFrame, compatible_support: pd.DataFrame, b
                 'BINID': bin_id,
                 'match_status': MATCH_UNMATCHED,
                 'matched_genome_id': pd.NA,
-                'matched_genome_ids': '',
+                'matched_genome_ids': '[]',
                 'correct_bp': 0,
                 'correct_seq_units': 0.0,
             })
@@ -285,19 +306,44 @@ def compute_fari_nxn_reference(U: np.ndarray, V: np.ndarray) -> float:
     return float((ri - eri) / (1.0 - eri))
 
 
-def compute_identifiable_bp_rand(unique_support: pd.DataFrame, assembly_bp: int) -> Tuple[float, float, float]:
+def compute_identifiable_bp_rand(
+    unique_support: pd.DataFrame, assembly_bp: int, identifiable_truth_bp: int
+) -> Tuple[float, float, float, float, int]:
     """Hubert-Arabie RI/ARI on unique-origin bp contingency; same formula as AMBER Metrics.compute_rand_index."""
     from cami_amber.binning_classes import Metrics
 
     if unique_support is None or unique_support.empty:
-        return _nan(), _nan(), 0.0
+        return _nan(), _nan(), 0.0, 0.0, 0
     confusion = unique_support[['BINID', 'genome_id', 'unique_support_bp']].rename(
         columns={'unique_support_bp': 'bp'}
     )
     confusion['bp'] = confusion['bp'].astype(int)
     participating = int(confusion['bp'].sum())
     ri, ari = Metrics.compute_rand_index(confusion, 'BINID', 'genome_id', 'bp')
-    return float(ri), float(ari), _div(participating, assembly_bp)
+    return (
+        float(ri),
+        float(ari),
+        _div(participating, assembly_bp),
+        _div(participating, identifiable_truth_bp),
+        participating,
+    )
+
+
+def build_identifiable_heatmap(unique_support: pd.DataFrame, truth: FractionalTruthSample) -> pd.DataFrame:
+    """Unique-origin bp heatmap with an unassigned row so columns sum to identifiable_truth_bp."""
+    genomes = list(truth.genomes)
+    ident = truth.genome_aggregates()['identifiable_bp']
+    if unique_support is None or unique_support.empty:
+        heat = pd.DataFrame(0.0, index=[], columns=genomes)
+        assigned = pd.Series(0.0, index=genomes)
+    else:
+        heat = unique_support.pivot_table(index='BINID', columns='genome_id', values='unique_support_bp', fill_value=0)
+        heat = heat.reindex(columns=genomes, fill_value=0)
+        assigned = heat.sum(axis=0)
+    unassigned = pd.Series({g: float(ident.get(g, 0) - assigned.get(g, 0)) for g in genomes})
+    heat = heat.copy()
+    heat.loc[UNASSIGNED_IDENTIFIABLE_ROW] = unassigned.reindex(heat.columns).fillna(0)
+    return heat
 
 
 def compute_sample_fari(truth: FractionalTruthSample, assignments: pd.DataFrame, weighted: bool) -> Tuple[float, int, float, float]:
@@ -305,8 +351,9 @@ def compute_sample_fari(truth: FractionalTruthSample, assignments: pd.DataFrame,
     eligible = [seq for seq in truth.sequences.values() if seq.is_fari_eligible() and seq.sequence_id in assigned_map]
     n_all = len(truth.sequences)
     bp_all = truth.assembly_bp()
+    n_eligible_truth = sum(1 for seq in truth.sequences.values() if seq.is_fari_eligible())
     if not eligible:
-        return _nan(), 0, 0.0, 0.0
+        return _nan(), 0, 0.0, 0.0, _div(0, n_eligible_truth)
     genomes = []
     genome_index = {}
     for seq in eligible:
@@ -357,9 +404,11 @@ def compute_sample_fari(truth: FractionalTruthSample, assignments: pd.DataFrame,
     qB = float(np.square(bin_w).sum())
     qAB = float(np.square(gram_uv).sum())
     value = compute_fari_from_stats(n, sA, sB, qA, qB, qAB, tA, tB)
-    seq_frac = len(eligible) / n_all if n_all else _nan()
-    bp_frac = sum(seq.length for seq in eligible) / bp_all if bp_all else _nan()
-    return value, len(eligible), seq_frac, bp_frac
+    assigned_eligible_bp = sum(seq.length for seq in eligible)
+    seq_frac_assembly = len(eligible) / n_all if n_all else _nan()
+    bp_frac_assembly = assigned_eligible_bp / bp_all if bp_all else _nan()
+    seq_frac_ident = _div(len(eligible), n_eligible_truth)
+    return value, len(eligible), seq_frac_assembly, bp_frac_assembly, seq_frac_ident
 
 
 def compute_sample_metrics(
@@ -490,8 +539,13 @@ def compute_sample_metrics(
     unique_seq_all = float(genome_df['unique_truth_seq_units'].sum()) if not genome_df.empty else 0.0
     best_unique_seq = float(genome_df['best_unique_tp_seq'].fillna(0).sum()) if not genome_df.empty else 0.0
 
-    fari_seq, fari_n, fari_seq_frac, fari_seq_bp_frac = compute_sample_fari(truth, assignments, weighted=False)
-    ri_bp_id, ari_bp_id, ari_bp_id_frac = compute_identifiable_bp_rand(unique_support, assembly_bp)
+    fari_seq, fari_n, fari_seq_frac, fari_seq_bp_frac, fari_seq_assign_ident = compute_sample_fari(
+        truth, assignments, weighted=False
+    )
+    ident_bp_total = int(truth.unique_truth_bp())
+    ri_bp_id, ari_bp_id, ari_part_asm, ari_assign_ident, _part = compute_identifiable_bp_rand(
+        unique_support, assembly_bp, ident_bp_total
+    )
 
     recovered = []
     for min_c in min_completeness:
@@ -516,14 +570,14 @@ def compute_sample_metrics(
         'percentage_of_assigned_seqs': _div(assigned_seq, n_seq),
         'precision_avg_bp': float(precision_df['precision_bp'].mean()) if not precision_df.empty else nan,
         'precision_avg_seq': float(precision_df['precision_seq'].mean()) if not precision_df.empty else nan,
-        'precision_avg_bp_sem': 0.0 if precision_df.empty or pd.isna(precision_df['precision_bp'].sem()) else float(precision_df['precision_bp'].sem()),
-        'precision_avg_seq_sem': 0.0 if precision_df.empty or pd.isna(precision_df['precision_seq'].sem()) else float(precision_df['precision_seq'].sem()),
+        'precision_avg_bp_sem': _sem(precision_df['precision_bp']) if not precision_df.empty else nan,
+        'precision_avg_seq_sem': _sem(precision_df['precision_seq']) if not precision_df.empty else nan,
         'precision_weighted_bp': _div(correct_bp, total_binned_bp),
         'precision_weighted_seq': _div(correct_seq, total_binned_seq),
         'recall_avg_bp': float(genome_df['best_recall_bp'].mean()) if not genome_df.empty else nan,
         'recall_avg_seq': float(genome_df['best_recall_seq'].mean()) if not genome_df.empty else nan,
-        'recall_avg_bp_sem': 0.0 if genome_df.empty or pd.isna(genome_df['best_recall_bp'].sem()) else float(genome_df['best_recall_bp'].sem()),
-        'recall_avg_seq_sem': 0.0 if genome_df.empty or pd.isna(genome_df['best_recall_seq'].sem()) else float(genome_df['best_recall_seq'].sem()),
+        'recall_avg_bp_sem': _sem(genome_df['best_recall_bp']) if not genome_df.empty else nan,
+        'recall_avg_seq_sem': _sem(genome_df['best_recall_seq']) if not genome_df.empty else nan,
         'recall_weighted_bp': _div(best_unique_tp_bp, identifiable_all),
         'recall_weighted_seq': _div(best_unique_seq, unique_seq_all),
         'accuracy_bp': _div(correct_bp, assembly_bp),
@@ -546,9 +600,12 @@ def compute_sample_metrics(
         'fari_seq_sequence_fraction': fari_seq_frac,
         'fari_sequence_fraction': fari_seq_frac,
         'fari_seq_bp_fraction': fari_seq_bp_frac,
+        'fari_seq_participating_fraction_of_assembly': fari_seq_bp_frac,
+        'fari_seq_assignment_fraction_of_identifiable_truth': fari_seq_assign_ident,
         'rand_index_bp_identifiable': ri_bp_id,
         'adjusted_rand_index_bp_identifiable': ari_bp_id,
-        'ari_bp_identifiable_fraction': ari_bp_id_frac,
+        'ari_bp_participating_fraction_of_assembly': ari_part_asm,
+        'ari_bp_assignment_fraction_of_identifiable_truth': ari_assign_ident,
         'truth_unique_bp': summary['unique_bp'],
         'truth_compatible_bp': summary['compatible_bp'],
         'truth_unresolved_bp': summary['unresolved_bp'],

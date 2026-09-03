@@ -60,7 +60,8 @@ ARI_BY_SEQ = 'adjusted_rand_index_seq'
 FARI_SEQ = 'fari_seq'
 RI_BP_IDENTIFIABLE = 'rand_index_bp_identifiable'
 ARI_BP_IDENTIFIABLE = 'adjusted_rand_index_bp_identifiable'
-ARI_BP_IDENTIFIABLE_FRACTION = 'ari_bp_identifiable_fraction'
+ARI_BP_PARTICIPATING_ASSEMBLY = 'ari_bp_participating_fraction_of_assembly'
+ARI_BP_ASSIGNMENT_IDENTIFIABLE = 'ari_bp_assignment_fraction_of_identifiable_truth'
 TRUTH_UNIQUE_FRACTION = 'truth_unique_fraction'
 TRUTH_COMPATIBLE_FRACTION = 'truth_compatible_fraction'
 TRUTH_UNRESOLVED_FRACTION = 'truth_unresolved_fraction'
@@ -125,8 +126,10 @@ TOOLTIP_ARI_BY_BP = "Rand index (bp) ajusted by the expected Rand index of a ran
 TOOLTIP_ARI_BY_SEQ = "Rand index (seq) ajusted by the expected Rand index of a random clustering. It ranges from 0 (worst) to 1 (best)."
 TOOLTIP_FARI_SEQ = "Frobenius Adjusted Rand Index (Andrews et al. 2022) on assigned unique-origin contig membership vectors. Compatible/unresolved sequences are excluded. Not a base-pair ARI."
 TOOLTIP_RI_BP_IDENTIFIABLE = "Rand index on uniquely attributable physical bp (Hubert-Arabie combinatorics as in standard AMBER bp RI). Compatible/unresolved bp are excluded."
-TOOLTIP_ARI_BP_IDENTIFIABLE = "Adjusted Rand index on uniquely attributable physical bp, identical in formula to standard AMBER adjusted_rand_index_bp. Compatible/unresolved bp are excluded."
-TOOLTIP_ARI_BP_IDENTIFIABLE_FRACTION = "Fraction of assembly bp that entered identifiable-bp RI/ARI (assigned unique-origin bp / assembly bp)."
+TOOLTIP_ARI_BP_IDENTIFIABLE = "Adjusted Rand index on uniquely attributable physical bp, identical in formula to standard AMBER adjusted_rand_index_bp. Compatible/unresolved bp are excluded. Unbinned bp are excluded from the contingency."
+TOOLTIP_ARI_BP_PARTICIPATING_ASSEMBLY = "Assigned unique-origin bp / assembly bp (identifiability × assignment coverage)."
+TOOLTIP_ARI_BP_ASSIGNMENT_IDENTIFIABLE = "Assigned unique-origin bp / total unique-origin truth bp (assignment coverage of identifiable truth)."
+TOOLTIP_FARI_SEQ_ASSIGN = "Assigned FARI-eligible sequences / all FARI-eligible sequences in truth (not assembly identifiability alone)."
 TOOLTIP_TRUTH_UNIQUE_FRACTION = "Fraction of assembly bp that is uniquely attributable to a single genome."
 TOOLTIP_TRUTH_COMPATIBLE_FRACTION = "Fraction of assembly bp compatible with two or more genomes."
 TOOLTIP_TRUTH_UNRESOLVED_FRACTION = "Fraction of assembly bp with no attributable origin."
@@ -182,7 +185,10 @@ LABELS = {'precision_avg_bp': 'Average purity (bp)',
           'fari_seq': 'FARI (seq)',
           'rand_index_bp_identifiable': 'Rand index (identifiable bp)',
           'adjusted_rand_index_bp_identifiable': 'Adjusted Rand index (identifiable bp)',
-          'ari_bp_identifiable_fraction': 'Identifiable-bp ARI coverage',
+          'ari_bp_participating_fraction_of_assembly': 'ARI participating fraction of assembly',
+          'ari_bp_assignment_fraction_of_identifiable_truth': 'ARI assignment fraction of identifiable truth',
+          'fari_seq_assignment_fraction_of_identifiable_truth': 'FARI assignment fraction of identifiable sequences',
+          'fari_seq_participating_fraction_of_assembly': 'FARI participating fraction of assembly',
           'truth_unique_fraction': 'Truth unique-origin fraction',
           'truth_compatible_fraction': 'Truth compatible fraction',
           'truth_unresolved_fraction': 'Truth unresolved fraction'}

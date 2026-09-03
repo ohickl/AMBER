@@ -72,7 +72,13 @@ Filtering removes entire sequences from the **evaluation** universe. Prediction 
 
 **Purity/completeness** use fractional bp and fractional sequence-unit metrics (compatibility-aware purity; unique-origin completeness).
 
-**Sequence clustering agreement** is FARI (`fari_seq`) on assigned sequences whose entire length is unique-origin. Each contig is one observation. A 70/30 A/B contig is the fuzzy membership row `[A=0.7, B=0.3]`. Compatible/unresolved sequences are excluded. Coverage: `fari_seq_n_sequences`, `fari_sequence_fraction`, `fari_seq_bp_fraction`.
+**Sequence clustering agreement** is FARI (`fari_seq`) on **assigned** sequences whose entire length is unique-origin (FARI-eligible). Each contig is one observation. A 70/30 A/B contig is the fuzzy membership row `[A=0.7, B=0.3]`. Compatible/unresolved sequences are excluded. Coverage:
+
+- `fari_seq_participating_fraction_of_assembly` / `fari_seq_bp_fraction`: assigned FARI-eligible bp / assembly bp
+- `fari_seq_assignment_fraction_of_identifiable_truth`: assigned FARI-eligible sequences / all FARI-eligible sequences in truth
+- `fari_seq_sequence_fraction`: assigned FARI-eligible sequences / all truth sequences
+
+These are not “fraction of the assembly that is identifiable” alone.
 
 Bonding matrices `A = U Uᵀ` and `B = V Vᵀ` are not materialized. Sufficient statistics:
 
@@ -88,7 +94,20 @@ plus the `Na`, `Nb`, FRI, expected-FRI, FARI equations of `R/fari.R`.
 C[bin, genome] = sum unique-origin COMPONENT_BP for sequences assigned to that bin
 ```
 
-A 70/30 contig therefore contributes **70 A observations and 30 B observations**, not 100 fuzzy `[.7,.3]` bases. Compatible/unresolved bp are excluded. `ari_bp_identifiable_fraction` is assigned unique-origin bp / assembly bp.
+A 70/30 contig therefore contributes **70 A observations and 30 B observations**, not 100 fuzzy `[.7,.3]` bases. Compatible/unresolved bp are excluded. Unbinned identifiable bp are **not** placed in the ARI contingency.
+
+Coverage:
+
+- `ari_bp_participating_fraction_of_assembly` = assigned unique-origin bp / assembly bp
+- `ari_bp_assignment_fraction_of_identifiable_truth` = assigned unique-origin bp / total unique-origin truth bp
+
+The unique-origin heatmap has predicted-bin rows plus `__UNASSIGNED_IDENTIFIABLE__`. Each genome column sums to `identifiable_truth_bp[genome]`. Compatible/unresolved bp are omitted from the heatmap; sample-level unique/compatible/unresolved fractions remain in the summary.
+
+`matched_genome_ids` is a JSON array (safe if genome IDs contain commas).
+
+`component_count` is the **canonical post-merge** component count. `input_component_rows` is the raw input row count.
+
+Average SEM values are NA when fewer than two observations exist (not 0).
 
 Length-weighted fuzzy FARI (replicating `[.7,.3]` once per base) is **not** a v1 headline metric and is not named `fari_bp`.
 
