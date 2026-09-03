@@ -5,7 +5,13 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from cami_amber.fractional_metrics import MATCH_COMPATIBLE_TIE, FractionalPredictionError, compute_sample_metrics
+from cami_amber.binning_classes import Metrics
+from cami_amber.fractional_metrics import (
+    MATCH_COMPATIBLE_TIE,
+    FractionalPredictionError,
+    compute_sample_fari,
+    compute_sample_metrics,
+)
 from test.fractional.helpers import genome_ids_json, load_assignments, load_truth_from_rows
 
 
@@ -235,6 +241,52 @@ class TestFractionalMetrics(unittest.TestCase):
         )
         self.assertAlmostEqual(result['precision_df'].iloc[0]['precision_bp'], 0.70)
         self.assertLess(result['precision_df'].iloc[0]['precision_bp'], 1.0)
+
+    def test_identifiable_bp_ari_matches_explicit_base_expansion(self):
+        result = self._run(
+            [
+                _row('c1', 100, 70, 'unique', ['A']),
+                _row('c1', 100, 30, 'unique', ['B']),
+                _row('c2', 100, 100, 'unique', ['A']),
+                _row('c3', 100, 100, 'unique', ['B']),
+            ],
+            [
+                {'SEQUENCEID': 'c1', 'BINID': 'bin1'},
+                {'SEQUENCEID': 'c2', 'BINID': 'bin1'},
+                {'SEQUENCEID': 'c3', 'BINID': 'bin2'},
+            ],
+        )
+        true_lab = ['A'] * 70 + ['B'] * 30 + ['A'] * 100 + ['B'] * 100
+        pred_lab = ['bin1'] * 100 + ['bin1'] * 100 + ['bin2'] * 100
+        confusion = pd.DataFrame({'BINID': pred_lab, 'genome_id': true_lab, 'bp': 1}).groupby(
+            ['BINID', 'genome_id'], as_index=False
+        ).sum()
+        ri, ari = Metrics.compute_rand_index(confusion, 'BINID', 'genome_id', 'bp')
+        self.assertAlmostEqual(result['metrics']['adjusted_rand_index_bp_identifiable'], ari, places=12)
+        self.assertAlmostEqual(result['metrics']['rand_index_bp_identifiable'], ri, places=12)
+        self.assertAlmostEqual(result['metrics']['ari_bp_identifiable_fraction'], 1.0)
+
+    def test_length_weighted_fari_is_not_identifiable_bp_ari(self):
+        truth_rows = [
+            _row('c1', 100, 70, 'unique', ['A']),
+            _row('c1', 100, 30, 'unique', ['B']),
+            _row('c2', 100, 100, 'unique', ['A']),
+            _row('c3', 100, 100, 'unique', ['B']),
+        ]
+        pred_rows = [
+            {'SEQUENCEID': 'c1', 'BINID': 'bin1'},
+            {'SEQUENCEID': 'c2', 'BINID': 'bin1'},
+            {'SEQUENCEID': 'c3', 'BINID': 'bin2'},
+        ]
+        result = self._run(truth_rows, pred_rows)
+        truth = load_truth_from_rows('s1', truth_rows)
+        assignments = load_assignments('s1', pred_rows, truth)
+        weighted_fari, _, _, _ = compute_sample_fari(truth, assignments, weighted=True)
+        self.assertTrue(np.isfinite(weighted_fari))
+        self.assertGreater(
+            abs(weighted_fari - result['metrics']['adjusted_rand_index_bp_identifiable']),
+            1e-6,
+        )
 
     def test_chimera_not_whole_contig_from_a(self):
         result = self._run(

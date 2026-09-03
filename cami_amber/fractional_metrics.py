@@ -285,6 +285,21 @@ def compute_fari_nxn_reference(U: np.ndarray, V: np.ndarray) -> float:
     return float((ri - eri) / (1.0 - eri))
 
 
+def compute_identifiable_bp_rand(unique_support: pd.DataFrame, assembly_bp: int) -> Tuple[float, float, float]:
+    """Hubert-Arabie RI/ARI on unique-origin bp contingency; same formula as AMBER Metrics.compute_rand_index."""
+    from cami_amber.binning_classes import Metrics
+
+    if unique_support is None or unique_support.empty:
+        return _nan(), _nan(), 0.0
+    confusion = unique_support[['BINID', 'genome_id', 'unique_support_bp']].rename(
+        columns={'unique_support_bp': 'bp'}
+    )
+    confusion['bp'] = confusion['bp'].astype(int)
+    participating = int(confusion['bp'].sum())
+    ri, ari = Metrics.compute_rand_index(confusion, 'BINID', 'genome_id', 'bp')
+    return float(ri), float(ari), _div(participating, assembly_bp)
+
+
 def compute_sample_fari(truth: FractionalTruthSample, assignments: pd.DataFrame, weighted: bool) -> Tuple[float, int, float, float]:
     assigned_map = dict(zip(assignments['SEQUENCEID'], assignments['BINID']))
     eligible = [seq for seq in truth.sequences.values() if seq.is_fari_eligible() and seq.sequence_id in assigned_map]
@@ -475,8 +490,8 @@ def compute_sample_metrics(
     unique_seq_all = float(genome_df['unique_truth_seq_units'].sum()) if not genome_df.empty else 0.0
     best_unique_seq = float(genome_df['best_unique_tp_seq'].fillna(0).sum()) if not genome_df.empty else 0.0
 
-    fari_seq, fari_n, fari_seq_frac, fari_bp_frac_eligible = compute_sample_fari(truth, assignments, weighted=False)
-    fari_bp, _, _, _ = compute_sample_fari(truth, assignments, weighted=True)
+    fari_seq, fari_n, fari_seq_frac, fari_seq_bp_frac = compute_sample_fari(truth, assignments, weighted=False)
+    ri_bp_id, ari_bp_id, ari_bp_id_frac = compute_identifiable_bp_rand(unique_support, assembly_bp)
 
     recovered = []
     for min_c in min_completeness:
@@ -527,12 +542,13 @@ def compute_sample_metrics(
         'f1_score_bp_cami1': nan,
         'f1_score_seq_cami1': nan,
         'fari_seq': fari_seq,
-        'fari_bp': fari_bp,
         'fari_seq_n_sequences': fari_n,
         'fari_seq_sequence_fraction': fari_seq_frac,
-        'fari_seq_bp_fraction': fari_bp_frac_eligible,
         'fari_sequence_fraction': fari_seq_frac,
-        'fari_bp_fraction': fari_bp_frac_eligible,
+        'fari_seq_bp_fraction': fari_seq_bp_frac,
+        'rand_index_bp_identifiable': ri_bp_id,
+        'adjusted_rand_index_bp_identifiable': ari_bp_id,
+        'ari_bp_identifiable_fraction': ari_bp_id_frac,
         'truth_unique_bp': summary['unique_bp'],
         'truth_compatible_bp': summary['compatible_bp'],
         'truth_unresolved_bp': summary['unresolved_bp'],

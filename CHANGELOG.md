@@ -5,7 +5,8 @@
 - Standard AMBER 2.0.8 CLI, CAMI hard gold-standard files, prediction files, taxonomic binning, and hard-truth metrics are unchanged when `-g/--gold_standard_file` is used.
 - Opt-in `--fractional-gold-standard` is mutually exclusive with `-g`.
 - Compatible `{A,B}` sequence may count toward bin purity for either genome and is excluded from primary identifiable completeness denominators. Predicted BINID strings have no matching semantics.
-- FARI follows Andrews et al. 2022 / `its-likeli-jeff/FARI` `R/fari.R` via compact sufficient statistics (no n×n bonding matrices, no dense n×bins membership).
+- Sequence clustering agreement is FARI (Andrews et al. 2022 / `its-likeli-jeff/FARI` `R/fari.R`) on identifiable contig memberships.
+- Base-pair clustering agreement is ordinary Hubert–Arabie RI/ARI on unique-origin bp (`adjusted_rand_index_bp_identifiable`), not length-weighted fuzzy FARI.
 - `--min_length` drops matching prediction rows; IDs absent from the original truth remain fatal.
 - `--remove_genomes` is unsupported in fractional-v1 (fail-fast).
 - Repeated `(sequence, kind, genome-set)` components are merged by summing bp.

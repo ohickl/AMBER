@@ -68,26 +68,33 @@ Filtering removes entire sequences from the **evaluation** universe. Prediction 
 
 ---
 
-## FARI
+## Clustering agreement (v1 taxonomy)
 
-Eligible sequences: assigned, 100% unique-origin (no compatible, no unresolved). Coverage is reported as `fari_seq_n_sequences`, `fari_sequence_fraction`, `fari_bp_fraction`.
+**Purity/completeness** use fractional bp and fractional sequence-unit metrics (compatibility-aware purity; unique-origin completeness).
 
-Bonding matrices `A = U Uᵀ`, `B = V Vᵀ` are **not** materialized. Sufficient statistics:
+**Sequence clustering agreement** is FARI (`fari_seq`) on assigned sequences whose entire length is unique-origin. Each contig is one observation. A 70/30 A/B contig is the fuzzy membership row `[A=0.7, B=0.3]`. Compatible/unresolved sequences are excluded. Coverage: `fari_seq_n_sequences`, `fari_sequence_fraction`, `fari_seq_bp_fraction`.
+
+Bonding matrices `A = U Uᵀ` and `B = V Vᵀ` are not materialized. Sufficient statistics:
 
 ```
 sA = ||Uᵀ 1||²    qA = ||Uᵀ U||_F²    qAB = ||Uᵀ V||_F²    tA = Σ_i ||u_i||²
 ```
 
-and the `Na`, `Nb`, FRI, expected-FRI, FARI equations of `R/fari.R`.
+plus the `Na`, `Nb`, FRI, expected-FRI, FARI equations of `R/fari.R`.
 
-bp-weighted FARI uses the same equations with conceptual row replication by integer length `w_i`:
+**Base-pair clustering agreement** is ordinary Hubert–Arabie RI/ARI on uniquely attributable physical bp (`rand_index_bp_identifiable`, `adjusted_rand_index_bp_identifiable`), using the same combinatorics as standard AMBER `adjusted_rand_index_bp`. The contingency is
 
 ```
-n = Σ w_i
-Uᵀ w,  Uᵀ diag(w) U,  trace terms Σ w_i ||u_i||²
+C[bin, genome] = sum unique-origin COMPONENT_BP for sequences assigned to that bin
 ```
 
-Legacy Rand/ARI and CAMI1 completeness fields are **NA** in fractional mode. HTML ranks FARI, not ARI.
+A 70/30 contig therefore contributes **70 A observations and 30 B observations**, not 100 fuzzy `[.7,.3]` bases. Compatible/unresolved bp are excluded. `ari_bp_identifiable_fraction` is assigned unique-origin bp / assembly bp.
+
+Length-weighted fuzzy FARI (replicating `[.7,.3]` once per base) is **not** a v1 headline metric and is not named `fari_bp`.
+
+Legacy hard Rand/ARI and CAMI1 completeness fields remain **NA** in fractional mode. HTML shows FARI (seq) and identifiable-bp ARI.
+
+Production never expands one row per base.
 
 ---
 
@@ -95,6 +102,6 @@ Legacy Rand/ARI and CAMI1 completeness fields are **NA** in fractional mode. HTM
 
 - Completeness measures identifiable unique-origin recovery only.
 - Compatible sequence is set-valued, not 50/50 ancestry.
-- FARI v1 excludes compatible/unresolved sequences.
+- Sequence FARI and identifiable-bp ARI both exclude compatible/unresolved sequence; coverage is reported separately.
 - Fractional mode does not synthesize gold-standard-vs-self.
 - Keep a standard AMBER `-g` run for external comparability.

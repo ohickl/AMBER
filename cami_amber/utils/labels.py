@@ -58,7 +58,9 @@ RI_BY_SEQ = 'rand_index_seq'
 ARI_BY_BP = 'adjusted_rand_index_bp'
 ARI_BY_SEQ = 'adjusted_rand_index_seq'
 FARI_SEQ = 'fari_seq'
-FARI_BP = 'fari_bp'
+RI_BP_IDENTIFIABLE = 'rand_index_bp_identifiable'
+ARI_BP_IDENTIFIABLE = 'adjusted_rand_index_bp_identifiable'
+ARI_BP_IDENTIFIABLE_FRACTION = 'ari_bp_identifiable_fraction'
 TRUTH_UNIQUE_FRACTION = 'truth_unique_fraction'
 TRUTH_COMPATIBLE_FRACTION = 'truth_compatible_fraction'
 TRUTH_UNRESOLVED_FRACTION = 'truth_unresolved_fraction'
@@ -121,8 +123,10 @@ TOOLTIP_RI_BY_SEQ_TAX = "Overall resolution in sequences of the underlying groun
 
 TOOLTIP_ARI_BY_BP = "Rand index (bp) ajusted by the expected Rand index of a random clustering. It ranges from 0 (worst) to 1 (best)."
 TOOLTIP_ARI_BY_SEQ = "Rand index (seq) ajusted by the expected Rand index of a random clustering. It ranges from 0 (worst) to 1 (best)."
-TOOLTIP_FARI_SEQ = "Frobenius Adjusted Rand Index (Andrews et al. 2022) on assigned unique-origin sequences. Not ARI. Compatible/unresolved sequences are excluded."
-TOOLTIP_FARI_BP = "Length-weighted FARI equivalent to conceptual row replication by sequence length."
+TOOLTIP_FARI_SEQ = "Frobenius Adjusted Rand Index (Andrews et al. 2022) on assigned unique-origin contig membership vectors. Compatible/unresolved sequences are excluded. Not a base-pair ARI."
+TOOLTIP_RI_BP_IDENTIFIABLE = "Rand index on uniquely attributable physical bp (Hubert-Arabie combinatorics as in standard AMBER bp RI). Compatible/unresolved bp are excluded."
+TOOLTIP_ARI_BP_IDENTIFIABLE = "Adjusted Rand index on uniquely attributable physical bp, identical in formula to standard AMBER adjusted_rand_index_bp. Compatible/unresolved bp are excluded."
+TOOLTIP_ARI_BP_IDENTIFIABLE_FRACTION = "Fraction of assembly bp that entered identifiable-bp RI/ARI (assigned unique-origin bp / assembly bp)."
 TOOLTIP_TRUTH_UNIQUE_FRACTION = "Fraction of assembly bp that is uniquely attributable to a single genome."
 TOOLTIP_TRUTH_COMPATIBLE_FRACTION = "Fraction of assembly bp compatible with two or more genomes."
 TOOLTIP_TRUTH_UNRESOLVED_FRACTION = "Fraction of assembly bp with no attributable origin."
@@ -176,7 +180,9 @@ LABELS = {'precision_avg_bp': 'Average purity (bp)',
           'unifrac_bp': 'UniFrac (bp)',
           'unifrac_seq': 'UniFrac (seq)',
           'fari_seq': 'FARI (seq)',
-          'fari_bp': 'FARI (bp)',
+          'rand_index_bp_identifiable': 'Rand index (identifiable bp)',
+          'adjusted_rand_index_bp_identifiable': 'Adjusted Rand index (identifiable bp)',
+          'ari_bp_identifiable_fraction': 'Identifiable-bp ARI coverage',
           'truth_unique_fraction': 'Truth unique-origin fraction',
           'truth_compatible_fraction': 'Truth compatible fraction',
           'truth_unresolved_fraction': 'Truth unresolved fraction'}

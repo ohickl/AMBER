@@ -71,6 +71,16 @@ class TestHardEquivalence(unittest.TestCase):
             self.assertAlmostEqual(pred_query.metrics.accuracy_bp, frac['metrics']['accuracy_bp'])
             self.assertAlmostEqual(pred_query.metrics.accuracy_seq, frac['metrics']['accuracy_seq'])
             self.assertTrue(np.isnan(frac['metrics']['adjusted_rand_index_seq']))
+            self.assertAlmostEqual(
+                pred_query.metrics.adjusted_rand_index_bp,
+                frac['metrics']['adjusted_rand_index_bp_identifiable'],
+                places=12,
+            )
+            self.assertAlmostEqual(
+                pred_query.metrics.rand_index_bp,
+                frac['metrics']['rand_index_bp_identifiable'],
+                places=12,
+            )
         finally:
             os.remove(gs_path)
             os.remove(pred_path)

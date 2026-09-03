@@ -317,7 +317,9 @@ def get_labels_genome():
              (utils_labels.ARI_BY_BP, utils_labels.TOOLTIP_ARI_BY_BP),
              (utils_labels.ARI_BY_SEQ, utils_labels.TOOLTIP_ARI_BY_SEQ),
              (utils_labels.FARI_SEQ, utils_labels.TOOLTIP_FARI_SEQ),
-             (utils_labels.FARI_BP, utils_labels.TOOLTIP_FARI_BP),
+             (utils_labels.RI_BP_IDENTIFIABLE, utils_labels.TOOLTIP_RI_BP_IDENTIFIABLE),
+             (utils_labels.ARI_BP_IDENTIFIABLE, utils_labels.TOOLTIP_ARI_BP_IDENTIFIABLE),
+             (utils_labels.ARI_BP_IDENTIFIABLE_FRACTION, utils_labels.TOOLTIP_ARI_BP_IDENTIFIABLE_FRACTION),
              (utils_labels.TRUTH_UNIQUE_FRACTION, utils_labels.TOOLTIP_TRUTH_UNIQUE_FRACTION),
              (utils_labels.TRUTH_COMPATIBLE_FRACTION, utils_labels.TOOLTIP_TRUTH_COMPATIBLE_FRACTION),
              (utils_labels.TRUTH_UNRESOLVED_FRACTION, utils_labels.TOOLTIP_TRUTH_UNRESOLVED_FRACTION),
@@ -415,7 +417,10 @@ def create_table_html(df_summary, is_taxonomic=False, include_cami1=False):
                 utils_labels.PERCENTAGE_ASSIGNED_BPS,
                 utils_labels.PERCENTAGE_ASSIGNED_SEQS]
     if 'fari_seq' in df_summary.index:
-        metrics2 += [utils_labels.FARI_SEQ, utils_labels.FARI_BP,
+        metrics2 += [utils_labels.FARI_SEQ,
+                     utils_labels.RI_BP_IDENTIFIABLE,
+                     utils_labels.ARI_BP_IDENTIFIABLE,
+                     utils_labels.ARI_BP_IDENTIFIABLE_FRACTION,
                      utils_labels.TRUTH_UNIQUE_FRACTION,
                      utils_labels.TRUTH_COMPATIBLE_FRACTION,
                      utils_labels.TRUTH_UNRESOLVED_FRACTION]
@@ -667,7 +672,7 @@ def create_rankings_table(df_summary, show_rank=False):
                    utils_labels.PRECISION_PER_BP,
                    utils_labels.RECALL_PER_BP,
                    utils_labels.FARI_SEQ,
-                   utils_labels.FARI_BP,
+                   utils_labels.ARI_BP_IDENTIFIABLE,
                    utils_labels.PERCENTAGE_ASSIGNED_BPS,
                    utils_labels.ACCURACY_PER_BP]
     if show_rank:
