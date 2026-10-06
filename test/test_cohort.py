@@ -35,7 +35,7 @@ class CohortTests(unittest.TestCase):
                                                  's0__control\ts0\tcontrol\ns0__metacarvel\ts0\tmetacarvel\n')
         manifest = dict(schema='amber-cohort-v1', domains='domains.tsv', observations='observations.tsv', models={})
         for model, truth in [('official', 'truth.tsv'), ('fractional', 'fractional.tsv')]:
-            manifest['models'][model] = dict(truth=truth, predictions=[dict(label='one', path='pred.tsv'), dict(label='empty', path='empty.tsv')])
+            manifest['models'][model] = dict(truth=truth, min_length=0 if model == 'fractional' else None, predictions=[dict(label='one', path='pred.tsv'), dict(label='empty', path='empty.tsv')])
         self.manifest = self.root / 'manifest.json'
         self.manifest.write_text(json.dumps(manifest))
 

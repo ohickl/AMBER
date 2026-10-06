@@ -62,9 +62,12 @@ def run(manifest_path: Path, output: Path, model_cache: Path) -> dict:
     models, receipt = {}, dict(schema=SCHEMA, models={})
     for model in ('official', 'fractional'):
         definition = manifest['models'][model]
+        minimum_length = definition.get('min_length', 1500 if model == 'fractional' else None)
+        if minimum_length is not None and (not isinstance(minimum_length, int) or minimum_length < 0):
+            raise ValueError('Minimum length must be a nonnegative integer')
         inputs = dict(truth=definition['truth'], domains=manifest['domains'], observations=manifest['observations'])
         inputs.update({'prediction/' + row['label']: row['path'] for row in definition['predictions']})
-        key = cache_key(inputs, dict(model=model, labels=manifest['labels'], min_completeness='90', max_contamination='5'))
+        key = cache_key(inputs, dict(model=model, labels=manifest['labels'], min_completeness='90', max_contamination='5', min_length=minimum_length))
         result = restore(model_cache, key, output / model)
         restored = result is not None
         if result is None:
@@ -72,6 +75,8 @@ def run(manifest_path: Path, output: Path, model_cache: Path) -> dict:
             args = [truth_flag, definition['truth'], '-o', str(output / model), '--skip_gs',
                     '--genome-domains', manifest['domains'], '--sample-metadata', manifest['observations'],
                     '-x', '90', '-y', '5', '-l', ','.join(manifest['labels'])]
+            if minimum_length is not None:
+                args.extend(['--min_length', str(minimum_length)])
             args.extend(row['path'] for row in definition['predictions'])
             result = amber.main(args, render_html=False)
             seal(model_cache, key, result)

@@ -10,7 +10,10 @@ pooled across different assemblies.
 The manifest has schema `amber-cohort-v1`, `domains` and `observations` TSV paths,
 and `models.official` / `models.fractional` entries with a `truth` path and an
 ordered `predictions` list of `{ "label": "method", "path": "method.tsv" }`.
-Paths resolve relative to the manifest. Both models must cover exactly the same
+Paths resolve relative to the manifest. Fractional scoring defaults to a 1500-bp
+minimum, preserving the existing benchmark policy. An explicit model
+`min_length` can override this for controlled fixtures; official scoring uses
+its already projected gold standard. Both models must cover exactly the same
 observations and ordered methods, including header-only zero-bin sections.
 Domain TSV columns are `SampleID`, `GenomeID`, `Domain`; SampleID refers to the
 biological sample. Observation columns are `SampleID`, `BiologicalSampleID`,
