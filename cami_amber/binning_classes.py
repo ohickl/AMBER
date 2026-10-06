@@ -648,6 +648,12 @@ class GenomeQuery(Query):
         self.precision_df['sample_id'] = self.sample_id
         self.recall_df = recall_df
 
+        from cami_amber.domain_metrics import capture_official_profiles
+        if hasattr(self.options, 'genome_domains'):
+            assigned = query_w_length.drop_duplicates('SEQUENCEID').groupby('genome_id').agg(
+                {'seq_length': 'sum', 'SEQUENCEID': 'count'})
+            capture_official_profiles(self, confusion_df, genome_sizes_df, assigned)
+
         if not self.options.skip_heatmap:
             self.heatmap_sdf = precision_recall_per_bin.transform_confusion_matrix2(query_w_length, confusion_df, precision_df, gs_df, log_scale=True)
 
@@ -767,6 +773,8 @@ class FractionalGenomeQuery(GenomeQuery):
         self.recall_df_cami1 = self.recall_df.copy()
         self.genome_df = result['genome_df']
         self.truth_summary = result['truth_summary']
+        from cami_amber.domain_metrics import capture_fractional_profiles
+        capture_fractional_profiles(self, assignments, result)
         unique_support = result['unique_support']
         from cami_amber.fractional_metrics import HEATMAP_MAX_CELLS, build_identifiable_heatmap
         self.heatmap_sdf = pd.DataFrame()

@@ -33,20 +33,13 @@ parentdir = os.path.dirname(currentdir)
 sys.path.insert(0, parentdir)
 
 
-def create_colors_list():
-    colors_list = []
-    for color in plt.cm.tab10(np.linspace(0, 1, 10))[:-1]:
-        colors_list.append(tuple(color))
-    colors_list.append("black")
-    for color in plt.cm.Set2(np.linspace(0, 1, 8)):
-        colors_list.append(tuple(color))
-    for color in plt.cm.Set3(np.linspace(0, 1, 12)):
-        colors_list.append(tuple(color))
-    return colors_list
+def create_colors_list(minimum_size=30):
+    from cami_amber.palette import categorical_colors
+    return categorical_colors(minimum_size)
 
 
 def create_legend(color_indices, available_tools, output_dir):
-    colors_list = create_colors_list()
+    colors_list = create_colors_list(max(len(available_tools), max(color_indices, default=-1) + 1) if color_indices else len(available_tools))
     if color_indices:
         colors_list = [colors_list[i] for i in color_indices]
 
@@ -78,9 +71,9 @@ def plot_precision_vs_bin_size(pd_bins, output_dir):
 
 
 def plot_by_genome_coverage(pd_bins, pd_target_column, available_tools, output_dir):
-    colors_list = create_colors_list()
+    colors_list = create_colors_list(len(available_tools))
     if len(available_tools) > len(colors_list):
-        raise RuntimeError("Plot only supports 29 colors")
+        raise RuntimeError("Colour indices do not cover all tools")
 
     fig, axs = plt.subplots(figsize=(5, 4.5))
 
@@ -247,7 +240,7 @@ def plot_boxplot(sample_id_to_queries_list, metric_name, output_dir, available_t
 
     medianprops = dict(linewidth=2.5, color='gold')
     bplot = axs.boxplot(metric_all, notch=0, vert=0, patch_artist=True, labels=available_tools, medianprops=medianprops, sym='k.')
-    colors_iter = iter(create_colors_list())
+    colors_iter = iter(create_colors_list(len(available_tools)))
 
     # turn on grid
     axs.grid(which='major', linestyle=':', linewidth='0.5', color='lightgrey')
@@ -293,7 +286,7 @@ def plot_summary(color_indices, df_results, labels, output_dir, rank, plot_type,
     available_tools = df_results[utils_labels.TOOL].unique()
     tools = [tool for tool in labels if tool in available_tools]
 
-    colors_list = create_colors_list()
+    colors_list = create_colors_list(max(len(tools), max(color_indices, default=-1) + 1) if color_indices else len(tools))
     if color_indices:
         colors_list = [colors_list[i] for i in color_indices]
     df_mean = df_results.groupby(utils_labels.TOOL).mean(numeric_only=True).reindex(tools)
@@ -301,7 +294,7 @@ def plot_summary(color_indices, df_results, labels, output_dir, rank, plot_type,
     binning_type = df_results[utils_labels.BINNING_TYPE].iloc[0]
 
     if len(df_mean) > len(colors_list):
-        raise RuntimeError("Plot only supports 29 colors")
+        raise RuntimeError("Colour indices do not cover all tools")
 
     fig, axs = plt.subplots(figsize=(5, 4.5))
 
@@ -514,11 +507,10 @@ def plot_contamination(pd_bins, binning_type, title, xlabel, ylabel, create_colu
     pd_bins_copy = pd_bins[[utils_labels.TOOL, 'precision_bp', 'recall_bp']].copy().dropna(subset=['precision_bp'])
     create_column_function(pd_bins_copy)
 
-    colors_list = create_colors_list()
+    tools = pd_bins_copy[utils_labels.TOOL].unique().tolist()
+    colors_list = create_colors_list(len(tools))
 
     fig, axs = plt.subplots(figsize=(6, 5))
-
-    tools = pd_bins_copy[utils_labels.TOOL].unique().tolist()
 
     for color, tool in zip(colors_list, tools):
         pd_tool_bins = pd_bins_copy[pd_bins_copy[utils_labels.TOOL] == tool]

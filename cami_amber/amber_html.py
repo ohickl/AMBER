@@ -1,3 +1,4 @@
+from cami_amber.palette import colors_for_labels, method_palette, save_palette
 # Copyright 2026 Department of Computational Biology for Infection Research - Helmholtz Centre for Infection Research
 #
 # This program is free software: you can redistribute it and/or modify
@@ -224,7 +225,7 @@ def create_title_div(id, name, info):
     return div
 
 
-def create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, output_dir, binning_type):
+def create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, output_dir, binning_type, native_prefix=None):
     styles = [{'selector': 'td', 'props': [('width', '92pt')]},
               {'selector': 'th', 'props': [('width', '92pt'), ('text-align', 'left')]},
               {'selector': 'expand-toggle:checked ~ * .data', 'props': [('background-color', 'white !important')]}]
@@ -240,20 +241,30 @@ def create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, output_
                 tool_to_sample_to_html[tool].append('')
                 continue
             pd_tool_sample = pd_tool_sample_groupby.get_group(sample_id)
+            source_tool = pd_tool_sample['SourceTool'].iloc[0] if 'SourceTool' in pd_tool_sample else tool
             pd_tool_sample = pd_tool_sample[list(bins_columns.keys())].rename(columns=dict(bins_columns))
             if binning_type == 'taxonomic':
                 pd_tool_sample['Taxon ID'] = pd_tool_sample['Taxon ID'].astype('Int64')
             tool_sample_html = pd_tool_sample.head(500).style.set_table_styles(styles).format(precision=3).hide(axis='index').to_html()
-            tool_sample_html += '<div style="padding-top: 20px; padding-bottom: 20px;">{}</div>'.format('Complete table available in: ' + os.path.join(output_dir, binning_type, tool, 'metrics_per_bin.tsv'))
+            from html import escape
+            from urllib.parse import quote
+            if native_prefix:
+                link = '/'.join(quote(part, safe='') for part in (native_prefix, binning_type, source_tool, 'metrics_per_bin.tsv'))
+                message = '<a href="{}">Download complete native table</a>'.format(escape(link, quote=True))
+            else:
+                message = 'Complete table available in: ' + escape(os.path.join(output_dir, binning_type, source_tool, 'metrics_per_bin.tsv'))
+            tool_sample_html += '<div style="padding-top: 20px; padding-bottom: 20px;">{}</div>'.format(message)
             tool_to_sample_to_html[tool].append(tool_sample_html)
     tool_to_sample_to_html['all_samples'] = sample_ids_list
 
-    table_div = Div(text="""<div>{}</div>""".format(tool_to_sample_to_html[tools[0]][0]))
+    first_index = next(i for i, text in enumerate(tool_to_sample_to_html[tools[0]]) if text)
+    table_div = Div(text="""<div>{}</div>""".format(tool_to_sample_to_html[tools[0]][first_index]))
 
     source = ColumnDataSource(data=tool_to_sample_to_html)
 
     select_tool = Select(title="Binner:", value=tools[0], options=tools)
-    select_sample = Select(title="Sample:", value='0', options=list(zip(map(str, range(len(sample_ids_list))), sample_ids_list)))
+    select_sample = Select(title="Sample:", value=str(first_index), options=[(str(i), sample)
+                           for i, sample in enumerate(sample_ids_list) if tool_to_sample_to_html[tools[0]][i]])
     select_tool_sample_callback = CustomJS(args=dict(source=source), code="""
         select_sample.options = [];
         const options_array = [];
@@ -263,9 +274,14 @@ def create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, output_
             }
         }
         select_sample.options = options_array;
+        if (options_array.length === 0) {
+            mytable.text = "No bins for this tool in the selected domains.";
+            return;
+        }
         if (source.data[select_tool.value][select_sample.value] != "") {
             mytable.text = source.data[select_tool.value][select_sample.value];
         } else {
+            select_sample.value = options_array[0][0];
             mytable.text = source.data[select_tool.value][options_array[0][0]];
         }
     """)
@@ -280,19 +296,9 @@ def create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, output_
     return metrics_bins_panel
 
 
-def create_contamination_completeness_table(pd_bins, min_completeness, max_contamination):
-    df = binning_classes.GenomeQuery.calc_num_recovered_genomes(pd_bins, min_completeness, max_contamination)
-
-    def create_table_column(field):
-        return TableColumn(title=field, field=field, width=600)
-
-    dt = DataTable(source=ColumnDataSource(df),
-                   columns=list(map(lambda x: create_table_column(x), df.columns.values)),
-                   width=800,
-                   height=1000,
-                   reorderable=True,
-                   selectable=True)
-    return [column(dt)]
+def create_contamination_completeness_table(pd_bins, min_completeness, max_contamination, groups=None):
+    from cami_amber.recovered_genomes import create_recovery_controls
+    return [create_recovery_controls(pd_bins, min_completeness, max_contamination, groups)]
 
 
 def create_heatmap_div():
@@ -524,9 +530,8 @@ def create_table_html(df_summary, is_taxonomic=False, include_cami1=False):
     return '{}<div style="margin-bottom:10pt;">{}</div>'.format(tooltips, html)
 
 
-def create_precision_recall_figure(df_summary, xname1, yname1, xname2, yname2, title):
-    colors_list = plots.create_colors_list()
-    bokeh_colors = [matplotlib.colors.to_hex(c) for c in colors_list]
+def create_precision_recall_figure(df_summary, xname1, yname1, xname2, yname2, title, palette=None):
+    bokeh_colors = colors_for_labels(df_summary.index.tolist(), palette)
 
     legend_it = []
     tooltips1 = [(utils_labels.TOOL, '@index'),
@@ -558,9 +563,8 @@ def create_precision_recall_figure(df_summary, xname1, yname1, xname2, yname2, t
     return p
 
 
-def create_precision_recall_all_genomes_scatter(pd_genome_bins, tools):
-    colors_list = plots.create_colors_list()
-    bokeh_colors = [matplotlib.colors.to_hex(c) for c in colors_list]
+def create_precision_recall_all_genomes_scatter(pd_genome_bins, tools, palette=None):
+    bokeh_colors = colors_for_labels(tools, palette)
 
     p = figure(title='Quality per bin', width=580, height=400, x_range=(0, 1), y_range=(0, 1), toolbar_location="below")
     p.add_tools(HoverTool(tooltips=[('Sample', '@sample_id'),
@@ -582,12 +586,11 @@ def create_precision_recall_all_genomes_scatter(pd_genome_bins, tools):
     return p
 
 
-def create_contamination_plot(pd_bins, tools, title, xlabel, ylabel, create_column_function):
+def create_contamination_plot(pd_bins, tools, title, xlabel, ylabel, create_column_function, palette=None):
     pd_bins_copy = pd_bins[[utils_labels.TOOL, 'precision_bp', 'recall_bp']].copy().dropna(subset=['precision_bp'])
     create_column_function(pd_bins_copy)
 
-    colors_list = plots.create_colors_list()
-    bokeh_colors = [matplotlib.colors.to_hex(c) for c in colors_list]
+    bokeh_colors = colors_for_labels(tools, palette)
 
     p = figure(title=title, width=580, height=400, toolbar_location="below")
     p.x_range.start = 0
@@ -695,22 +698,20 @@ def create_rankings_table(df_summary, show_rank=False):
     return [column(dt)]
 
 
-def create_genome_binning_plots_panel(pd_bins, pd_mean):
+def create_genome_binning_plots_panel(pd_bins, pd_mean, palette):
     click_div = Div(text=CLICK_ON_LEGENDS_DIV, styles={"width": "500px", "margin-top": "15px; margin-bottom:5px;"})
-    purity_completeness_plot = column(create_precision_recall_figure(pd_mean, utils_labels.AVG_PRECISION_BP, utils_labels.AVG_RECALL_BP, utils_labels.AVG_PRECISION_SEQ, utils_labels.AVG_RECALL_SEQ, utils_labels.QUALITY_OF_BINS))
-    purity_recall_bp_plot = column(create_precision_recall_figure(pd_mean, utils_labels.PRECISION_PER_BP, utils_labels.RECALL_PER_BP, utils_labels.PRECISION_PER_SEQ, utils_labels.RECALL_PER_SEQ, utils_labels.QUALITY_OF_SAMPLE))
+    purity_completeness_plot = column(create_precision_recall_figure(pd_mean, utils_labels.AVG_PRECISION_BP, utils_labels.AVG_RECALL_BP, utils_labels.AVG_PRECISION_SEQ, utils_labels.AVG_RECALL_SEQ, utils_labels.QUALITY_OF_BINS, palette))
+    purity_recall_bp_plot = column(create_precision_recall_figure(pd_mean, utils_labels.PRECISION_PER_BP, utils_labels.RECALL_PER_BP, utils_labels.PRECISION_PER_SEQ, utils_labels.RECALL_PER_SEQ, utils_labels.QUALITY_OF_SAMPLE, palette))
 
     all_samples_div = Div(text='<div style="padding-top: 20px;">All samples</div>', styles={"width": "500px", "margin-top": "15px; margin-bottom:5px;"})
-    all_bins_plot = column(create_precision_recall_all_genomes_scatter(pd_bins, pd_mean.index.tolist()))
-    completeness_contamination_plot = column(create_contamination_plot(pd_bins, pd_mean.index.tolist(), 'Completeness - contamination', 'Index of bin (sorted by completeness - contamination (bp))', 'Completeness - contamination (bp)', plots.create_completeness_minus_contamination_column))
-    contamination_plot = column(create_contamination_plot(pd_bins, pd_mean.index.tolist(), 'Contamination', 'Index of bin (sorted by contamination (bp))', 'Contamination (bp)', plots.create_contamination_column))
+    all_bins_plot = column(create_precision_recall_all_genomes_scatter(pd_bins, pd_mean.index.tolist(), palette))
+    completeness_contamination_plot = column(create_contamination_plot(pd_bins, pd_mean.index.tolist(), 'Completeness - contamination', 'Index of bin (sorted by completeness - contamination (bp))', 'Completeness - contamination (bp)', plots.create_completeness_minus_contamination_column, palette))
+    contamination_plot = column(create_contamination_plot(pd_bins, pd_mean.index.tolist(), 'Contamination', 'Index of bin (sorted by contamination (bp))', 'Contamination (bp)', plots.create_contamination_column, palette))
 
     return TabPanel(child=column([click_div, purity_completeness_plot, purity_recall_bp_plot, all_samples_div, all_bins_plot, completeness_contamination_plot, contamination_plot], sizing_mode='scale_width'), title='Plots')
 
 
 def create_genome_binning_html(df_summary, pd_bins, labels, sample_ids_list, options):
-    if pd_bins.empty:
-        return None
     df_summary_g = df_summary[df_summary[utils_labels.BINNING_TYPE] == 'genome']
     if df_summary_g.empty:
         return None
@@ -744,18 +745,37 @@ def create_genome_binning_html(df_summary, pd_bins, labels, sample_ids_list, opt
     metrics_column = column(column(select_sample, create_heatmap_div(), genome_div, sizing_mode='scale_width'), sizing_mode='scale_width')
     metrics_panel = TabPanel(child=metrics_column, title="Metrics")
 
-    plots_panel = create_genome_binning_plots_panel(pd_bins, pd_mean)
+    plots_panel = (create_genome_binning_plots_panel(pd_bins, pd_mean, options.tool_palette) if not pd_bins.empty
+                   else TabPanel(child=Div(text='No predicted bins match the selected domains.'), title='Plots'))
 
     bins_columns = utils_labels.get_genome_bins_columns()
-    metrics_bins_panel = create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, options.output_dir, 'genome')
-
-    cc_table = create_contamination_completeness_table(pd_bins, options.min_completeness, options.max_contamination)
-    cc_panel = TabPanel(child=row(cc_table), title="#Recovered genomes")
+    groups = list(df_summary_g[[utils_labels.SAMPLE, utils_labels.TOOL]].drop_duplicates().itertuples(index=False, name=None))
+    # Reuse identical bin views across domain masks. Their full contamination
+    # and original matching are invariant, so serializing them repeatedly only
+    # inflates the self-contained HTML and browser memory.
+    import hashlib
+    identity_columns = [name for name in list(bins_columns) + ['SourceTool'] if name in pd_bins]
+    identity = hashlib.sha256(pd.util.hash_pandas_object(pd_bins[identity_columns], index=False).values.tobytes()).hexdigest()
+    cache_key = (identity, tuple(groups))
+    if not hasattr(options, 'bin_view_cache'):
+        options.bin_view_cache = {}
+    if cache_key not in options.bin_view_cache:
+        metrics_bins_panel = (create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, options.output_dir, 'genome', getattr(options, 'report_native_prefix', None))
+                              if not pd_bins.empty else TabPanel(child=Div(text='No predicted bins match the selected domains.'), title='Metrics per bin'))
+        cc_table = create_contamination_completeness_table(pd_bins, options.min_completeness, options.max_contamination, groups)
+        cc_panel = TabPanel(child=row(cc_table), title="#Recovered genomes")
+        from cami_amber.overlap import create_overlap_panel
+        overlap = create_overlap_panel(pd_bins, df_summary_g,
+                                       cc_panel.select_one({'name': 'recovery_completeness'}),
+                                       cc_panel.select_one({'name': 'recovery_contamination'}), options.tool_palette)
+        overlap_panel = TabPanel(child=overlap, title='Overlap')
+        options.bin_view_cache[cache_key] = metrics_bins_panel, cc_panel, overlap_panel
+    metrics_bins_panel, cc_panel, overlap_panel = options.bin_view_cache[cache_key]
 
     rankings_panel = TabPanel(child=column([Div(text="Click on the columns header for sorting.", styles={"width": "500px", "margin-top": "20px"}),
                                         row(create_rankings_table(pd_mean.reset_index().set_index([utils_labels.SAMPLE, utils_labels.TOOL])))]), title="Rankings")
 
-    tabs = Tabs(tabs=[metrics_panel, plots_panel, metrics_bins_panel, rankings_panel, cc_panel])
+    tabs = Tabs(tabs=[metrics_panel, plots_panel, metrics_bins_panel, rankings_panel, cc_panel, overlap_panel])
 
     return tabs
 
@@ -891,10 +911,17 @@ def create_taxonomic_binning_html(df_summary, pd_bins, labels, sample_ids_list, 
 
 def create_html(df_summary, pd_bins, labels, sample_ids_list, options, desc_text):
     logging.getLogger('amber').info('Creating HTML page')
+    options.tool_palette = method_palette(labels)
+    save_palette(options.output_dir, options.tool_palette)
     create_heatmap_bar(options.output_dir)
     tabs_list = []
 
-    metrics_row_g = create_genome_binning_html(df_summary, pd_bins[pd_bins['rank'] == 'NA'], labels, sample_ids_list, options)
+    if hasattr(options, 'domain_profiles'):
+        from cami_amber.domain_report import create_domain_report
+        metrics_row_g = create_domain_report(options.domain_profiles, labels, sample_ids_list,
+                                             options, create_genome_binning_html)
+    else:
+        metrics_row_g = create_genome_binning_html(df_summary, pd_bins[pd_bins['rank'] == 'NA'], labels, sample_ids_list, options)
     if metrics_row_g:
         tabs_list.append(TabPanel(child=metrics_row_g, title="Genome binning"))
 

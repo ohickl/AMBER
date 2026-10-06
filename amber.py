@@ -35,6 +35,9 @@ def get_logger(output_dir, silent):
     make_sure_path_exists(output_dir)
     logger = logging.getLogger('amber')
     logger.setLevel(logging.INFO)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     logging_fh = logging.FileHandler(os.path.join(output_dir, 'log.txt'))
     logging_fh.setFormatter(formatter)
@@ -108,7 +111,7 @@ def save_metrics(sample_id_to_g_queries_list, df_summary, pd_bins, output_dir, s
         pd_genomes_all.to_csv(os.path.join(output_dir, 'genome_metrics_cami1.tsv'), index=False, sep='\t')
 
 
-def main(args=None):
+def main(args=None, render_html=True):
     parser = argparse.ArgumentParser(description="AMBER: Assessment of Metagenome BinnERs",
                                      parents=[argparse_parents.PARSER_MULTI2], prog='AMBER')
     truth_group = parser.add_mutually_exclusive_group(required=True)
@@ -125,6 +128,8 @@ def main(args=None):
     parser.add_argument('-d', '--desc', help="Description for HTML page", required=False)
     parser.add_argument('--colors', help="Color indices", required=False)
     parser.add_argument('--silent', help='Silent mode', action='store_true')
+    parser.add_argument('--genome-domains', help='Truth genome domains TSV: SampleID, GenomeID, Domain')
+    parser.add_argument('--sample-metadata', help='Observation TSV: SampleID, BiologicalSampleID, AssemblyVariant')
     parser.add_argument('--skip_gs', help='Skip gold standard evaluation vs itself', action='store_true')
     parser.add_argument(
         '-v', '--version', action='version',
@@ -189,6 +194,16 @@ def main(args=None):
 
     coverages_pd = load_data.open_coverages(args.genome_coverage)
 
+    from cami_amber import domain_metadata
+    observations = domain_metadata.read_observation_metadata(args.sample_metadata) if args.sample_metadata else None
+    if observations and set(sample_ids_list) != set(observations):
+        raise ValueError('Observation metadata and evaluated truth samples must match exactly')
+    if args.genome_domains:
+        if any(sample_id_to_t_queries_list.values()):
+            raise ValueError('Domain report controls currently require genome-binning queries')
+        domain_metadata.configure_domain_views(sample_id_to_g_queries_list, options, options_gs,
+                                               args.genome_domains, observations)
+
     create_output_directories(output_dir, sample_id_to_g_queries_list, sample_id_to_t_queries_list)
 
     df_summary, pd_bins = evaluate.evaluate_samples_queries(sample_id_to_g_queries_list, sample_id_to_t_queries_list)
@@ -215,22 +230,33 @@ def main(args=None):
                 os.path.join(output_dir, 'genome_metrics_fractional.tsv'), sep='\t', index=False
             )
 
-    plots.plot_genome_binning(args.colors,
+    if render_html:
+        plots.plot_genome_binning(args.colors,
                               sample_id_to_g_queries_list,
                               df_summary,
                               pd_bins[pd_bins['rank'] == 'NA'],
                               labels,
                               coverages_pd,
-                              output_dir)
-    plots.plot_taxonomic_binning(args.colors, df_summary, pd_bins, labels, output_dir)
+                                  output_dir)
+        plots.plot_taxonomic_binning(args.colors, df_summary, pd_bins, labels, output_dir)
 
-    amber_html.create_html(df_summary,
-                           pd_bins,
-                           [utils_labels.GS] + labels,
-                           sample_ids_list,
-                           options,
-                           args.desc)
+    report_summary, report_bins = df_summary, pd_bins
+    report_labels = [utils_labels.GS] + labels
+    if args.genome_domains:
+        from cami_amber.domain_metrics import combine_profiles
+        options.domain_profiles = combine_profiles(sample_id_to_g_queries_list, options.domain_masks)
+    if observations:
+        report_summary, report_bins = domain_metadata.report_observation_views(df_summary, pd_bins, observations)
+        report_labels = list(dict.fromkeys(report_summary[utils_labels.TOOL]))
+        sample_ids_list = list(dict.fromkeys(row['BiologicalSampleID'] for row in observations.values()))
+        if args.genome_domains:
+            options.domain_profiles = {mask: domain_metadata.report_observation_views(summary, bins, observations)
+                                       for mask, (summary, bins) in options.domain_profiles.items()}
+    if render_html:
+        amber_html.create_html(report_summary, report_bins, report_labels, sample_ids_list, options, args.desc)
     logger.info('AMBER finished successfully. All results have been saved to {}'.format(output_dir))
+    return dict(summary=report_summary, bins=report_bins, labels=report_labels,
+                samples=sample_ids_list, options=options)
 
 
 if __name__ == "__main__":

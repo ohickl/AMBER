@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -417,8 +417,16 @@ def compute_sample_metrics(
     min_completeness: Sequence[float],
     max_contamination: Sequence[float],
     filter_tail_percentage: float = 0.0,
+    selected_genomes=None,
+    support_cache=None,
 ) -> dict:
-    unique_support, compatible_support, bin_totals = build_support_matrices(truth, assignments)
+    if selected_genomes is not None and not set(selected_genomes) <= set(truth.genomes):
+        raise ValueError('Domain selection names genomes absent from truth')
+    if support_cache is None:
+        unique_support, compatible_support, bin_totals = build_support_matrices(truth, assignments)
+    else:
+        unique_support, compatible_support, bin_totals = support_cache
+    full_support_cache = (unique_support, compatible_support, bin_totals)
     bin_ids = sorted(bin_totals['BINID'].tolist()) if not bin_totals.empty else []
     matches = match_bins(unique_support, compatible_support, bin_ids)
     agg = truth.genome_aggregates()
@@ -526,10 +534,38 @@ def compute_sample_metrics(
         })
     genome_df = pd.DataFrame(genome_rows)
 
+    # Match on the complete bin first. Domain selection never removes foreign
+    # bases from a bin's purity denominator or changes its matched genome.
+    domain_subset = selected_genomes is not None and set(selected_genomes) != set(truth.genomes)
+    if domain_subset:
+        selected_genomes = set(selected_genomes)
+        precision_df = precision_df[precision_df['genome_id'].isin(selected_genomes)] if not precision_df.empty else precision_df
+        genome_df = genome_df[genome_df['genome_id'].isin(selected_genomes)] if not genome_df.empty else genome_df
+        unique_support = unique_support[unique_support['genome_id'].isin(selected_genomes)] if not unique_support.empty else unique_support
+
     assigned_bp = int(bin_totals['total_length'].sum()) if not bin_totals.empty else 0
     assigned_seq = int(bin_totals['total_seq_counts'].sum()) if not bin_totals.empty else 0
     assembly_bp = truth.assembly_bp()
     n_seq = len(truth.sequences)
+    if domain_subset:
+        # A compatible component touching a selected genome is counted once as
+        # physical truth. Its origin is ambiguous, so never divide its bp among
+        # domains or remove it from a selected bin's contamination denominator.
+        assigned_ids = set(assignments['SEQUENCEID'])
+        selected_bp = assigned_selected_bp = 0
+        selected_units = assigned_selected_units = 0.0
+        fari_sequences = OrderedDict()
+        for sid, seq in truth.sequences.items():
+            bp = sum(c.bp for c in seq.components if c.genome_ids & selected_genomes)
+            selected_bp += bp
+            selected_units += bp / seq.length
+            if sid in assigned_ids:
+                assigned_selected_bp += bp
+                assigned_selected_units += bp / seq.length
+            if seq.is_fari_eligible() and all(c.genome_ids <= selected_genomes for c in seq.components):
+                fari_sequences[sid] = seq
+        assembly_bp, n_seq = selected_bp, selected_units
+        assigned_bp, assigned_seq = assigned_selected_bp, assigned_selected_units
     correct_bp = float(precision_df['tp_length'].sum()) if not precision_df.empty else 0.0
     correct_seq = float(precision_df['tp_seq_counts'].sum()) if not precision_df.empty else 0.0
     total_binned_bp = float(precision_df['total_length'].sum()) if not precision_df.empty else 0.0
@@ -539,10 +575,16 @@ def compute_sample_metrics(
     unique_seq_all = float(genome_df['unique_truth_seq_units'].sum()) if not genome_df.empty else 0.0
     best_unique_seq = float(genome_df['best_unique_tp_seq'].fillna(0).sum()) if not genome_df.empty else 0.0
 
+    fari_truth = (FractionalTruthSample(truth.sample_id, fari_sequences, sorted(selected_genomes))
+                  if domain_subset else truth)
     fari_seq, fari_n, fari_seq_frac, fari_seq_bp_frac, fari_seq_assign_ident = compute_sample_fari(
-        truth, assignments, weighted=False
+        fari_truth, assignments, weighted=False
     )
-    ident_bp_total = int(truth.unique_truth_bp())
+    if domain_subset:
+        fari_seq_frac = _div(fari_n, n_seq)
+        fari_seq_bp_frac = _div(sum(seq.length for sid, seq in fari_sequences.items()
+                                   if sid in assigned_ids), assembly_bp)
+    ident_bp_total = int(identifiable_all) if domain_subset else int(truth.unique_truth_bp())
     ri_bp_id, ari_bp_id, ari_part_asm, ari_assign_ident, _part = compute_identifiable_bp_rand(
         unique_support, assembly_bp, ident_bp_total
     )
@@ -561,6 +603,14 @@ def compute_sample_metrics(
             recovered.append({'min_completeness': min_c, 'max_contamination': max_cont, 'count': count})
 
     summary = truth.summary_row()
+    if domain_subset:
+        unique_bp = int(identifiable_all)
+        summary = dict(summary, assembly_bp=assembly_bp, n_sequences=n_seq,
+                       n_genomes=len(selected_genomes), unique_bp=unique_bp,
+                       compatible_bp=assembly_bp - unique_bp, unresolved_bp=0,
+                       unique_truth_fraction=_div(unique_bp, assembly_bp),
+                       compatible_truth_fraction=_div(assembly_bp - unique_bp, assembly_bp),
+                       unresolved_truth_fraction=_div(0, assembly_bp))
     nan = _nan()
     metrics = {
         'truth_model': TRUTH_MODEL_FRACTIONAL,
@@ -624,4 +674,5 @@ def compute_sample_metrics(
         'compatible_support': compatible_support,
         'recovered': recovered,
         'truth_summary': summary,
+        'support_cache': full_support_cache,
     }

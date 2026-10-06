@@ -133,6 +133,7 @@ def read_metadata(path_label_tuple):
             if len(line) == 0 or line.startswith("#"):
                 if got_column_indices and not reading_data:
                     data_start = i + 1
+                    data_end = i
                 continue
 
             # parse header with column indices
@@ -142,6 +143,7 @@ def read_metadata(path_label_tuple):
                 got_column_indices = True
                 reading_data = False
                 data_start = i + 1
+                data_end = i
 
             elif line.startswith('@'):
                 logging.getLogger('amber').info('Found {} in {}'.format(line, label))
@@ -170,6 +172,10 @@ def load_sample(metadata):
     columns = ['SEQUENCEID', 'BINID', 'TAXID', 'LENGTH', '_LENGTH']
     logging.getLogger('amber').info('Loading %s of %s' % (metadata[2]['SAMPLEID'], metadata[5]))
     usecols = [v for v in metadata[3] if v in columns]
+    if metadata[1] < metadata[0]:
+        df = pd.DataFrame({column: pd.Series(dtype='string') for column in usecols})
+        df.rename(columns={'_LENGTH': 'LENGTH'}, inplace=True)
+        return df
 
     if metadata[0] < 1000:
         nrows = metadata[1] - metadata[0] + 1

@@ -61,10 +61,8 @@ def plot_by_genome(data, out_file=None, sort_by='completeness'):
 
 
 def plot_precision_recall_per_bin(pd_bins, output_dir):
-    colors_list = plots.create_colors_list()
     df_groups = pd_bins[[utils_labels.TOOL, 'precision_bp', 'recall_bp']].dropna().groupby(utils_labels.TOOL)
-    if len(df_groups) > len(colors_list):
-        raise RuntimeError("Plot only supports 29 colors")
+    colors_list = plots.create_colors_list(len(df_groups))
 
     fig, axs = plt.subplots(figsize=(6, 5))
 
