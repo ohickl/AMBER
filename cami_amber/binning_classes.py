@@ -518,6 +518,24 @@ class GenomeQuery(Query):
 
         gs_df = self.gold_standard.df.rename(columns={'LENGTH': 'seq_length', 'BINID': 'genome_id'})
         query_df = self.df
+        if gs_df.empty:
+            # A length-filtered microfixture can legitimately have no truth.
+            # Keep its observation and schema, but never invent zero scores.
+            for attribute in vars(self.metrics):
+                setattr(self.metrics, attribute, np.nan)
+            columns = ['genome_id', 'precision_bp', 'precision_seq', 'recall_bp',
+                       'recall_seq', 'total_length', 'tp_length', 'total_seq_counts',
+                       'tp_seq_counts', 'length_gs', 'seq_counts_gs', 'seq_length_mean',
+                       'rank', utils_labels.TOOL, 'sample_id']
+            self.precision_df = pd.DataFrame(columns=columns).rename_axis('BINID')
+            self.recall_df = self.precision_df.copy()
+            self.recall_df_cami1 = self.precision_df.reset_index()
+            if hasattr(self.options, 'genome_domains'):
+                self.domain_profiles = {
+                    mask: (self.get_metrics_df(), self.precision_df.reset_index())
+                    for mask in self.options.domain_masks}
+            self.eval_success = True
+            return
         condition = query_df['SEQUENCEID'].isin(gs_df['SEQUENCEID'])
         if ~condition.all():
             logging.getLogger('amber').warning("{} sequences in {} not found in the gold standard.".format(query_df[~condition]['SEQUENCEID'].nunique(), self.label))
@@ -780,7 +798,7 @@ class FractionalGenomeQuery(GenomeQuery):
         self.heatmap_sdf = pd.DataFrame()
         n_genomes = max(len(self.fractional_truth.genomes), 1)
         n_bins = 0 if unique_support is None or unique_support.empty else unique_support['BINID'].nunique()
-        if (n_bins + 1) * n_genomes <= HEATMAP_MAX_CELLS:
+        if self.fractional_truth.genomes and (n_bins + 1) * n_genomes <= HEATMAP_MAX_CELLS:
             heat = build_identifiable_heatmap(unique_support, self.fractional_truth)
             self.heatmap_sdf = np.log10(heat.where(heat > 0))
             logging.getLogger('amber').info(

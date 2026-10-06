@@ -484,7 +484,14 @@ def compute_sample_metrics(
             'matched_genome_identifiable_fraction': ident_frac,
             'rank': 'NA',
         })
-    precision_df = pd.DataFrame(precision_rows)
+    precision_df = pd.DataFrame(precision_rows, columns=[
+        'BINID', 'match_status', 'matched_genome_id', 'matched_genome_ids',
+        'genome_id', 'total_length', 'total_seq_counts', 'compatible_tp_length',
+        'tp_length', 'unique_tp_length', 'tp_seq_counts', 'foreign_bp',
+        'compatible_bp', 'unresolved_bp', 'precision_bp', 'precision_bp_resolved',
+        'precision_seq', 'recall_bp', 'recall_seq', 'length_gs', 'seq_counts_gs',
+        'matched_genome_identifiable_truth_bp', 'matched_genome_identifiable_fraction',
+        'rank'])
 
     if filter_tail_percentage and not precision_df.empty:
         precision_df = precision_df.copy()
@@ -532,7 +539,11 @@ def compute_sample_metrics(
             'best_recall_bp': best_recall_bp,
             'best_recall_seq': best_recall_seq,
         })
-    genome_df = pd.DataFrame(genome_rows)
+    genome_df = pd.DataFrame(genome_rows, columns=[
+        'genome_id', 'identifiable_truth_bp', 'unique_truth_seq_units',
+        'compatible_truth_bp_involving_genome', 'identifiable_fraction',
+        'best_bin_id', 'best_unique_tp_bp', 'best_unique_tp_seq',
+        'best_recall_bp', 'best_recall_seq'])
 
     # Match on the complete bin first. Domain selection never removes foreign
     # bases from a bin's purity denominator or changes its matched genome.

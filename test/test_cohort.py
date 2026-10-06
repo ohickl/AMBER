@@ -49,6 +49,25 @@ class CohortTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'every observation'):
             amber_cohort.load_manifest(self.manifest)
 
+    def test_zero_eligible_truth_keeps_undefined_scores_and_report(self):
+        (self.root / 'truth.tsv').write_text(
+            ''.join('@Version:0.10.0\n@SampleID:' + sample +
+                    '\n@@SEQUENCEID\tBINID\t_LENGTH\n'
+                    for sample in ('s0__control', 's0__metacarvel')))
+        manifest = json.loads(self.manifest.read_text())
+        manifest['models']['fractional']['min_length'] = 1500
+        for model in manifest['models'].values():
+            for prediction in model['predictions']:
+                prediction['path'] = 'empty.tsv'
+        self.manifest.write_text(json.dumps(manifest))
+        output = self.root / 'empty_report'
+        amber_cohort.run(self.manifest, output, self.root / 'cache')
+        for model in ('official', 'fractional'):
+            summary = pd.read_csv(output / model / 'results.tsv', sep='\t')
+            self.assertEqual(len(summary), 4)
+            self.assertTrue(summary['recall_weighted_bp'].isna().all())
+        self.assertTrue((output / 'index.html').is_file())
+
     def test_cached_scores_and_corruption_detection(self):
         cache = self.root / 'cache'
         with patch('amber_cohort.create_cohort_report'):

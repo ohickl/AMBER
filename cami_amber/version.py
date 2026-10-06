@@ -1,6 +1,6 @@
 __upstream_version__ = '2.0.8'
-__extension_version__ = 'cohort-domain-report-2'
-__version__ = '2.0.8+cohort.2'
+__extension_version__ = 'cohort-domain-report-3'
+__version__ = '2.0.8+cohort.3'
 TRUTH_MODEL_FRACTIONAL = 'fractional-origin-v1'
 FRACTIONAL_SCHEMA_VERSION = '0.1.0'
 SCORING_MODEL_VERSION = 'scoring-model-v1'

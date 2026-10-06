@@ -40,7 +40,7 @@ def evaluate_samples_queries(sample_id_to_g_queries_list, sample_id_to_t_queries
         for sample_id in sample_id_to_queries_list:
             for query in sample_id_to_queries_list[sample_id]:
                 if query.eval_success:
-                    df_summary = pd.concat([df_summary, query.get_metrics_df().dropna(axis=1, how='all')], ignore_index=True, sort=True)
+                    df_summary = pd.concat([df_summary, query.get_metrics_df()], ignore_index=True, sort=True)
                     pd_bins = pd.concat([pd_bins, query.precision_df.reset_index()], ignore_index=True, sort=True)
 
     get_metrics(sample_id_to_g_queries_list)
