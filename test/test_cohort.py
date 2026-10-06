@@ -1,7 +1,10 @@
 """Complete sample coverage, valid empty panels and sealed model restoration."""
 from __future__ import annotations
 
+import base64
+import gzip
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,6 +70,23 @@ class CohortTests(unittest.TestCase):
             self.assertEqual(len(summary), 4)
             self.assertTrue(summary['recall_weighted_bp'].isna().all())
         self.assertTrue((output / 'index.html').is_file())
+
+    def test_lazy_report_keeps_both_models_and_connected_controls(self):
+        output = self.root / 'lazy_report'
+        amber_cohort.run(self.manifest, output, self.root / 'cache')
+        html = (output / 'index.html').read_text()
+        bundles = json.loads(re.search(r'const bundles = (.*);', html)[1])
+        self.assertEqual(set(bundles), {'0', '2'})
+        for bundle in bundles.values():
+            item = json.loads(gzip.decompress(base64.b64decode(bundle)))
+            root = item['doc']['roots'][0]
+            self.assertEqual([tab['attributes']['title'] for tab in root['attributes']['tabs']],
+                             ['Official', 'Fractional'])
+            self.assertEqual(len(item['controls']), 18)
+            self.assertIn('official/recovery_mode', item['controls'])
+            self.assertIn('fractional/recovery_mode', item['controls'])
+        self.assertIn('DecompressionStream', html)
+        self.assertIn('doc.clear()', html)
 
     def test_cached_scores_and_corruption_detection(self):
         cache = self.root / 'cache'

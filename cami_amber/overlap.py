@@ -9,6 +9,7 @@ from bokeh.models import (ColumnDataSource, CustomJS, DataTable, Div, FactorRang
                           FixedTicker, MultiChoice, Select, Slider, TableColumn)
 from bokeh.plotting import figure
 from bokeh.events import DocumentReady
+from cami_amber.report_controls import bounded_choices, responsive_filters
 
 
 ALL_SAMPLES = '[sum over samples]'
@@ -145,7 +146,7 @@ def create_overlap_panel(bins, summary, recovery_completeness, recovery_contamin
     for tool in tool_ids:
         palette[tool]
     samples = list(dict.fromkeys(summary['Sample']))
-    tools = MultiChoice(title='Tools', options=tool_ids, value=tool_ids, name='overlap_tools')
+    tools = bounded_choices(MultiChoice(title='Tools', options=tool_ids, value=tool_ids, name='overlap_tools'))
     sample = Select(title='Sample', options=[ALL_SAMPLES] + samples, value=ALL_SAMPLES, name='overlap_sample')
     completeness = Slider(title='Completeness greater than (%)', start=0, end=100, step=1,
                           value=recovery_completeness.value, name='overlap_completeness')
@@ -197,7 +198,10 @@ def create_overlap_panel(bins, summary, recovery_completeness, recovery_contamin
                         sizing_mode='stretch_width', height=300, index_position=None)
               for source, fields in [(totals, ['Tool','Recovered','Unique']),
                                       (intersections, ['Tools','Count']), (genomes, ['Sample','Genome','Tools'])]]
-    layout = column(row(sample, tools), row(completeness, contamination), note, venn_plot, bar_plot, matrix_plot,
+    for plot in (venn_plot, bar_plot, matrix_plot):
+        plot.sizing_mode = 'stretch_width'
+        plot.min_width = 0
+    layout = column(responsive_filters(tools, sample), responsive_filters(completeness, contamination), note, venn_plot, bar_plot, matrix_plot,
                   Div(text='Per-tool recovery and unique genomes'), tables[0],
                   Div(text='All exclusive intersections'), tables[1],
                   Div(text='Recovered sample–genome pairs'), tables[2], sizing_mode='stretch_width')

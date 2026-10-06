@@ -38,6 +38,7 @@ class RecoveryControlsTest(unittest.TestCase):
             for name, value in [('samples', samples), ('tools', tools),
                                 ('completeness', completeness), ('contamination', contamination)]:
                 script += 'const ' + name + ' = {value: ' + json.dumps(value) + '};\n'
+            script += 'const mode = {value: "By sample"};\n'
             script += 'const source = {data: {}, change: {emit() {}}};\n'
             script += RECOVERY_JS + '\nconsole.log(JSON.stringify(source.data));'
             actual = json.loads(subprocess.check_output(['node', '-e', script], text=True))
@@ -49,6 +50,25 @@ class RecoveryControlsTest(unittest.TestCase):
         self.assertIn('Completeness greater than (%)', html)
         self.assertIn('Contamination less than (%)', html)
         self.assertEqual(html.count('new Map()'), 1)
+
+    def test_totals_sum_selected_samples_and_preserve_zero_groups(self):
+        records = recovery_records(self.bins)
+        self.assertEqual(count_recovered(records, 90, 5, ['s1','s2'], ['a','b'], True),
+                         dict(Sample=['Total','Total'], Tool=['a','b'], Count=[2,0]))
+        self.assertEqual(count_recovered(records, 90, 5, ['s2'], ['a'], True)['Count'], [1])
+        self.assertEqual(count_recovered(records, 90, 5, [], ['a'], True)['Count'], [])
+
+    def test_javascript_totals_match_backend_and_empty_filters(self):
+        records = recovery_records(self.bins)
+        for samples, tools in [(['s1','s2'], ['a','b']), (['s2'], ['a']), ([], ['a']), (['s1'], [])]:
+            script = 'const records = ' + json.dumps(records) + ';\n'
+            for name, value in [('samples', samples), ('tools', tools), ('completeness', 90),
+                                ('contamination', 5), ('mode', 'Total across selected samples')]:
+                script += 'const ' + name + ' = {value: ' + json.dumps(value) + '};\n'
+            script += 'const source = {data: {}, change: {emit() {}}};\n'
+            script += RECOVERY_JS + '\nconsole.log(JSON.stringify(source.data));'
+            actual = json.loads(subprocess.check_output(['node', '-e', script], text=True))
+            self.assertEqual(actual, count_recovered(records, 90, 5, samples, tools, True))
 
 
 if __name__ == '__main__':

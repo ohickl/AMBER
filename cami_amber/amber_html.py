@@ -763,7 +763,7 @@ def create_genome_binning_html(df_summary, pd_bins, labels, sample_ids_list, opt
         metrics_bins_panel = (create_metrics_per_bin_panel(pd_bins, bins_columns, sample_ids_list, options.output_dir, 'genome', getattr(options, 'report_native_prefix', None))
                               if not pd_bins.empty else TabPanel(child=Div(text='No predicted bins match the selected domains.'), title='Metrics per bin'))
         cc_table = create_contamination_completeness_table(pd_bins, options.min_completeness, options.max_contamination, groups)
-        cc_panel = TabPanel(child=row(cc_table), title="#Recovered genomes")
+        cc_panel = TabPanel(child=column(cc_table, sizing_mode='stretch_width'), title="#Recovered genomes")
         from cami_amber.overlap import create_overlap_panel
         overlap = create_overlap_panel(pd_bins, df_summary_g,
                                        cc_panel.select_one({'name': 'recovery_completeness'}),
@@ -775,7 +775,11 @@ def create_genome_binning_html(df_summary, pd_bins, labels, sample_ids_list, opt
     rankings_panel = TabPanel(child=column([Div(text="Click on the columns header for sorting.", styles={"width": "500px", "margin-top": "20px"}),
                                         row(create_rankings_table(pd_mean.reset_index().set_index([utils_labels.SAMPLE, utils_labels.TOOL])))]), title="Rankings")
 
-    tabs = Tabs(tabs=[metrics_panel, plots_panel, metrics_bins_panel, rankings_panel, cc_panel, overlap_panel])
+    from cami_amber.report_controls import TAB_STYLE, responsive_panel
+    responsive_panel(cc_panel.child)
+    responsive_panel(overlap_panel.child)
+    tabs = Tabs(tabs=[metrics_panel, plots_panel, metrics_bins_panel, rankings_panel, cc_panel, overlap_panel],
+                sizing_mode='stretch_width', min_width=0, stylesheets=[TAB_STYLE])
 
     return tabs
 
@@ -904,6 +908,9 @@ def create_taxonomic_binning_html(df_summary, pd_bins, labels, sample_ids_list, 
 
     tools_panel = TabPanel(child=create_plots_per_binner(pd_mean), title="Plots per binner")
 
+    from cami_amber.report_controls import TAB_STYLE, responsive_panel
+    responsive_panel(cc_panel.child)
+    responsive_panel(overlap_panel.child)
     tabs = Tabs(tabs=[metrics_panel, tax_ranks_panel, tools_panel, metrics_bins_panel, rankings_panel])
 
     return tabs

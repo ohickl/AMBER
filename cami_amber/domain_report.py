@@ -40,7 +40,7 @@ def create_domain_report(profiles, labels, samples, options, make_panel):
         panels[key] = make_panel(summary, bins, labels, samples, options)
         controls[key] = {name: panels[key].select_one({'name': name})
                          for name in ('recovery_completeness', 'recovery_contamination',
-                                      'recovery_samples', 'recovery_tools', 'overlap_tools', 'overlap_sample',
+                                      'recovery_samples', 'recovery_tools', 'recovery_mode', 'overlap_tools', 'overlap_sample',
                                       'overlap_completeness', 'overlap_contamination')}
     return create_domain_selector(panels, controls, max(profiles))
 
