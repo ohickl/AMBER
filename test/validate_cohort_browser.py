@@ -26,9 +26,11 @@ with webdriver.Firefox(options=options) as driver:
         models().active = 1;
         page(0).active = 5;
         page(1).active = 5;
-        control('overlap_tools').value = ['a / control', 'b / control'];
+        window.expectedTools = control('overlap_tools').options.slice(0, 2);
+        window.expectedSample = control('overlap_sample').options[1];
+        control('overlap_tools').value = expectedTools;
         control('overlap_contamination').value = 35;
-        control('overlap_sample').value = 's0';
+        control('overlap_sample').value = expectedSample;
         domains.active = [1];
     ''')
     actual = driver.execute_script('''
@@ -37,8 +39,9 @@ with webdriver.Firefox(options=options) as driver:
                 contamination: control('overlap_contamination').value,
                 tools: control('overlap_tools').value};
     ''')
-    assert actual == dict(model=1, officialTab=5, fractionalTab=5, sample='s0', contamination=35,
-                          tools=['a / control', 'b / control']), actual
+    expected = driver.execute_script('return {tools: expectedTools, sample: expectedSample}')
+    assert actual == dict(model=1, officialTab=5, fractionalTab=5, sample=expected['sample'], contamination=35,
+                          tools=expected['tools']), actual
     driver.execute_script("domains.active = [];")
     assert driver.execute_script("return control('overlap_contamination').value") == 35
     print('cohort-browser-v1 models=2 tabs=6 domain_switch=pass controls_preserved=pass')
