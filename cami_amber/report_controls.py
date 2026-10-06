@@ -1,6 +1,7 @@
 """Responsive, bounded filter controls shared by recovery and overlap."""
 
-from bokeh.layouts import row
+from bokeh.layouts import column, row
+from bokeh.models import Button, CustomJS, MultiChoice
 
 
 CHOICE_STYLE = """
@@ -41,7 +42,9 @@ def responsive_filters(*controls):
         control.min_width = 0
         control.styles = {**control.styles, 'min-width': '0', 'width': '100%'}
         control.stylesheets = [*control.stylesheets, ':host {min-width:0; width:100% !important; max-width:100%;}']
-    return row(*controls, sizing_mode='stretch_width', min_width=0,
+    children = [choice_actions(control) if isinstance(control, MultiChoice) else control
+                for control in controls]
+    return row(*children, sizing_mode='stretch_width', min_width=0,
                styles=FILTER_STYLES)
 
 
@@ -60,3 +63,16 @@ def responsive_panel(panel):
             model.stylesheets = [*model.stylesheets,
                                  ':host {min-width:0; width:100% !important; max-width:100%;}']
     return panel
+
+
+SELECT_ALL_JS = 'control.value = control.options.map(option => Array.isArray(option) ? option[0] : option);'
+CLEAR_JS = 'control.value = [];'
+
+
+def choice_actions(control):
+    all_button = Button(label='Select all', width=100, name=control.name + '_all')
+    clear_button = Button(label='Clear', width=80, name=control.name + '_clear')
+    all_button.js_on_click(CustomJS(args=dict(control=control), code=SELECT_ALL_JS))
+    clear_button.js_on_click(CustomJS(args=dict(control=control), code=CLEAR_JS))
+    return column(row(all_button, clear_button), control,
+                  sizing_mode='stretch_width', min_width=0)

@@ -16,7 +16,7 @@ def encode_view(document, root_id, controls):
 
 def lazy_html(views, present_mask):
     controls = ''.join(f'<label><input type="checkbox" value="{i}" checked>{name}</label>'
-                       for i, name in enumerate(DOMAINS) if present_mask & (1 << i))
+                       for i, name in enumerate(DOMAINS))
     return '''<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AMBER cohort comparison</title>''' + INLINE.render() + '''
@@ -85,7 +85,7 @@ async function load(){
  finally {busy=false;}
 }
 document.getElementById('domains').addEventListener('change',()=>{
- desired=Array.from(document.querySelectorAll('#domains input:checked')).reduce((mask,input)=>mask | (1<<Number(input.value)),0);
+ desired=Array.from(document.querySelectorAll('#domains input:checked')).reduce((mask,input)=>mask | (1<<Number(input.value)),0) & ''' + str(present_mask) + ''';
  load();
 });
 load();

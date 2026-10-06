@@ -20,7 +20,7 @@ with webdriver.Firefox(options=options) as driver:
     def ready(mask=None):
         WebDriverWait(driver, 90).until(lambda d: d.execute_script(
             'return window.cohortReport && (cohortReport.error || (cohortReport.ready && (arguments[0]===null || cohortReport.mask===arguments[0])))', mask))
-        assert driver.execute_script('return cohortReport.error') is None
+        assert driver.execute_script('return cohortReport.error') is None, driver.execute_script('return cohortReport.error')
     ready()
     initial_seconds = time.monotonic() - started
     present_mask = driver.execute_script('return cohortReport.mask')
@@ -52,12 +52,113 @@ with webdriver.Firefox(options=options) as driver:
         control('recovery_tools').value=control('recovery_tools').options.slice(0,2);
         control('recovery_mode').value='Total across selected samples';
     ''')
+    labels = driver.execute_script("return [...document.querySelectorAll('#domains label')].map(label=>label.textContent)")
+    assert labels == ['Archaea','Bacteria','Viruses','Eukaryotes','Plasmids','Unknown'], labels
+    for model in (0,1):
+        driver.execute_script('cohortReport.root.active=arguments[0]',model)
+        for tab in (0,2):
+            driver.execute_script('cohortReport.root.tabs[arguments[0]].child.active=arguments[1]',model,tab)
+            time.sleep(.25)
+            driver.execute_script("""
+                const panel=cohortReport.root.tabs[arguments[0]].child.tabs[arguments[1]].child;
+                window.tableModel=[...panel.references()].find(item=>item.type==='Div' && item.text.includes('<table'));
+                if(!tableModel)throw Error('Expected actual table markup');
+                if(!findView(tableModel).shadow_el.querySelector('td'))throw Error('Table rendered as text');
+                window.tableSelectors=[...panel.references()].filter(item=>item.type==='Select' &&
+                    Object.values(item.js_property_callbacks).flat().some(callback=>callback.args.mytable===tableModel));
+            """,model,tab)
+            count = driver.execute_script('return tableSelectors.length')
+            for index in range(count):
+                driver.execute_script("""const select=tableSelectors[arguments[0]];
+                    if(select.options.length>1){const option=select.options[1];select.value=Array.isArray(option)?option[0]:option;}""",index)
+                time.sleep(.25)
+                assert driver.execute_script("return !!findView(tableModel).shadow_el.querySelector('td')")
+    driver.execute_script('cohortReport.root.active=0;cohortReport.root.tabs[0].child.active=4')
     time.sleep(.4)
     assert driver.execute_script("return checkTotals('official')") >= 0
     driver.execute_script("control('recovery_tools').value=[]")
     time.sleep(.2)
     assert driver.execute_script("return checkTotals('official')") == 0
     driver.execute_script("control('recovery_tools').value=control('recovery_tools').options;control('recovery_samples').value=control('recovery_samples').options")
+    for model in ('official','fractional'):
+        driver.execute_script("cohortReport.root.active=arguments[0];cohortReport.root.tabs[arguments[0]].child.active=5",0 if model=='official' else 1)
+        driver.execute_script("""
+            window.overlapArgs=control('overlap_tools',arguments[0]).js_property_callbacks['change:value'][0].args;
+            window.checkOverlap=()=>{
+                const a=overlapArgs, expected=new Map(a.tools.value.map(tool=>[tool,new Set()]));
+                for(const row of a.records){
+                    if(!expected.has(row.tool)||(a.sample.value!=='[sum over samples]'&&row.sample!==a.sample.value))continue;
+                    if(row.completeness>a.completeness.value/100&&row.purity>1-a.contamination.value/100)
+                        expected.get(row.tool).add(JSON.stringify([row.sample,row.genome]));
+                }
+                if(JSON.stringify(a.totals.data.Tool)!==JSON.stringify(a.tools.value))throw Error('Overlap tool selection did not update');
+                a.totals.data.Tool.forEach((tool,i)=>{if(a.totals.data.Recovered[i]!==expected.get(tool).size)throw Error('Overlap recovery differs');});
+                if(a.sample.value!=='[sum over samples]'&&a.genomes.data.Sample.some(sample=>sample!==a.sample.value))throw Error('Overlap sample selection did not update');
+                return {sample:a.sample.value,tools:a.totals.data.Tool,rows:a.genomes.data.Sample.length,
+                        venn:a.venn_plot.visible,upset:a.bar_plot.visible};
+            };
+            control('overlap_tools',arguments[0]).value=control('overlap_tools',arguments[0]).options.slice(0,2);
+            control('overlap_completeness',arguments[0]).value=70;
+        """,model)
+        time.sleep(.3)
+        result=driver.execute_script('return checkOverlap()')
+        assert len(result['tools'])==2 and result['venn'] and not result['upset'],result
+        driver.execute_script("control('overlap_sample',arguments[0]).value=control('overlap_sample',arguments[0]).options[1]",model)
+        time.sleep(.3)
+        result=driver.execute_script('return checkOverlap()')
+        assert result['sample']!='[sum over samples]',result
+        driver.execute_script("control('overlap_tools',arguments[0]).value=control('overlap_tools',arguments[0]).options",model)
+        time.sleep(.3)
+        result=driver.execute_script('return checkOverlap()')
+        if len(result['tools'])>3:assert result['upset'] and not result['venn'],result
+        driver.execute_script("control('overlap_tools',arguments[0]).value=[]",model)
+        time.sleep(.3)
+        assert driver.execute_script('return checkOverlap().rows')==0
+        driver.execute_script("control('overlap_tools',arguments[0]).value=control('overlap_tools',arguments[0]).options;control('overlap_sample',arguments[0]).value=control('overlap_sample',arguments[0]).options[0]",model)
+        # Plot legends use Bokeh's own hide interaction; exercise the real view.
+        driver.execute_script("cohortReport.root.tabs[arguments[0]].child.active=1",0 if model=='official' else 1)
+        time.sleep(.25)
+        driver.execute_script("""
+            const panel=cohortReport.root.tabs[arguments[0]].child.tabs[1].child;
+            const legend=[...panel.references()].find(item=>item.type==='Legend'&&item.click_policy==='hide'&&item.items.length);
+            if(!legend)throw Error('Missing interactive plot legend');
+            window.legendView=findView(legend); window.legendRenderer=legend.items[0].renderers[0];
+            window.previousVisible=legendRenderer.visible;
+            legendView.entries[0].el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+        """,0 if model=='official' else 1)
+        time.sleep(.15)
+        assert driver.execute_script('return legendRenderer.visible!==previousVisible')
+        driver.execute_script("legendView.entries[0].el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))")
+    for model_index in (0,1):
+        driver.execute_script('cohortReport.root.active=arguments[0];cohortReport.root.tabs[arguments[0]].child.active=3',model_index)
+        time.sleep(.2)
+        driver.execute_script("""
+            const panel=cohortReport.root.tabs[arguments[0]].child.tabs[3].child;
+            const table=[...panel.references()].find(item=>item.type==='DataTable');
+            window.rankingView=findView(table);
+            window.rankingHeaders=rankingView.shadow_el.querySelectorAll('.slick-header-column');
+            if(rankingHeaders.length<2)throw Error('Missing ranking headers');
+            rankingHeaders[1].dispatchEvent(new MouseEvent('click',{bubbles:true}));
+        """,model_index)
+        time.sleep(.2)
+        assert driver.execute_script("return !!rankingView.shadow_el.querySelector('.slick-header-column-sorted')")
+    # Click actual Bokeh buttons, then verify the corresponding selection and data.
+    for model_index, model in enumerate(('official','fractional')):
+        for tab, names in ((4,('recovery_tools','recovery_samples')),(5,('overlap_tools',))):
+            driver.execute_script('cohortReport.root.active=arguments[0];cohortReport.root.tabs[arguments[0]].child.active=arguments[1]',model_index,tab)
+            time.sleep(.2)
+            for name in names:
+                for suffix in ('clear','all'):
+                    driver.execute_script("""
+                        const choice=control(arguments[0],arguments[1]);
+                        const panel=cohortReport.root.tabs[arguments[1]==='official'?0:1].child;
+                        const button=[...panel.references()].find(item=>item.name===arguments[0]+'_'+arguments[2]);
+                        if(!button)throw Error('Missing selection button');
+                        findView(button).shadow_el.querySelector('button').click();
+                    """,name,model,suffix)
+                    time.sleep(.2)
+                    assert driver.execute_script("const choice=control(arguments[0],arguments[1]);return arguments[2]==='clear'?choice.value.length===0:choice.value.length===choice.options.length",name,model,suffix), (name,model,suffix)
+    driver.execute_script('cohortReport.root.active=0')
     widths = []
     for width in (1440, 650):
         driver.set_window_size(width, 1000)
@@ -105,8 +206,8 @@ with webdriver.Firefox(options=options) as driver:
         assert driver.execute_script('return Bokeh.documents.length') == 1
         assert driver.execute_script('return Object.keys(Bokeh.index).length') == 2
         driver.execute_script("checkTotals('official');checkTotals('fractional')")
-    receipt = dict(schema='cohort-browser-v2',initial_seconds=initial_seconds,
+    receipt = dict(schema='cohort-browser-v3',initial_seconds=initial_seconds, metric_tables='pass',domain_choices=6,overlap_data='pass',plot_legends='pass',ranking_sort='pass',selection_buttons='pass',
                    timings=driver.execute_script('return cohortReport.timings'),
                    responsive=widths, totals='pass', empty_filters='pass', state_preserved='pass',live_documents=1)
     Path(sys.argv[1]).with_suffix('.browser.json').write_text(json.dumps(receipt,indent=2)+'\n')
-    print(f'cohort-browser-v2 initial_seconds={initial_seconds:.2f} models=2 tabs=6 widths=1440,650 totals=pass domain_switch=pass live_documents=1')
+    print(f'cohort-browser-v3 metric_tables=pass domain_choices=6 initial_seconds={initial_seconds:.2f} models=2 tabs=6 widths=1440,650 totals=pass domain_switch=pass live_documents=1')

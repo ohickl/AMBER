@@ -9,8 +9,16 @@ import re
 from pathlib import Path
 
 from cami_amber.recovered_genomes import RECOVERY_JS
-from cami_amber.report_controls import CHOICE_STYLE, FILTER_STYLES, TAB_STYLE
+from cami_amber.report_controls import CHOICE_STYLE, FILTER_STYLES, TAB_STYLE, SELECT_ALL_JS, CLEAR_JS
 from cami_amber.lazy_report import encode_view, lazy_html
+
+
+def decode_document_json(value: str) -> dict:
+    """Apply the same one-pass entity decoding as Bokeh's standalone embed."""
+    entities = {'amp':'&', 'lt':'<', 'gt':'>', 'quot':'"', '#x27':"'", '#x60':'`'}
+    decoded = re.sub(r'&(amp|lt|gt|quot|#x27|#x60);',
+                     lambda match: entities[match[1]], value)
+    return json.loads(decoded)
 
 
 def model_definitions(value: object) -> dict:
@@ -35,7 +43,7 @@ def mapping(value: dict) -> dict:
 
 
 def packed(value: dict) -> dict:
-    return dict(type='map', entries=list(value.items()))
+    return dict(type='map', entries=[[key, item] for key, item in value.items()])
 
 
 def data_digest(models: dict) -> str:
@@ -52,7 +60,7 @@ def refresh(source: Path, output: Path) -> dict:
     if len(matches) != 1:
         raise ValueError('Expected one standalone Bokeh document')
     match = matches[0]
-    payload = json.loads(match[1])
+    payload = decode_document_json(match[1])
     if len(payload) != 1 or next(iter(payload.values())).get('version') != '3.8.2':
         raise ValueError('Expected the pinned Bokeh 3.8.2 report schema')
     models = model_definitions(payload)
@@ -133,6 +141,31 @@ def refresh(source: Path, output: Path) -> dict:
                     ':host {min-width:0; width:100% !important; max-width:100%;}']
                 pending.extend(child['id'] for child in properties.get('children',[]))
     models.update({mode['id']: mode for mode in modes.values()})
+    wrappers = {}
+    for key, control in named.items():
+        if control['attributes']['name'] not in ('recovery_tools','recovery_samples','overlap_tools'):
+            continue
+        buttons = []
+        for suffix, label, width, code in [('all','Select all',100,SELECT_ALL_JS),('clear','Clear',80,CLEAR_JS)]:
+            callback_id = key + '_' + suffix + '_callback'
+            callback = dict(type='object',name='CustomJS',id=callback_id,
+                            attributes=dict(code='const control = cb_obj.origin.document.get_model_by_id('+json.dumps(key)+');\n'+code))
+            button_id = key + '_' + suffix
+            button = dict(type='object',name='Button',id=button_id,attributes=dict(
+                name=control['attributes']['name']+'_'+suffix,label=label,width=width,
+                js_event_callbacks=packed({'button_click':[dict(id=callback_id)]})))
+            models[callback_id]=callback;models[button_id]=button;buttons.append(dict(id=button_id))
+        row_id=key+'_actions';wrapper_id=key+'_filter'
+        models[row_id]=dict(type='object',name='Row',id=row_id,attributes=dict(children=buttons))
+        models[wrapper_id]=dict(type='object',name='Column',id=wrapper_id,attributes=dict(
+            children=[dict(id=row_id),dict(id=key)],sizing_mode='stretch_width',min_width=0,
+            stylesheets=[':host {min-width:0; width:100% !important; max-width:100%;}']))
+        wrappers[key]=wrapper_id
+    for model in list(models.values()):
+        if model['name']!='Row':continue
+        children=model.get('attributes',{}).get('children',[])
+        if len(children)==2 and any(child['id'] in wrappers for child in children):
+            model['attributes']['children']=[dict(id=wrappers[child['id']]) if child['id'] in wrappers else child for child in children]
     if before != data_digest(models):
         raise ValueError('Embedded source data changed during control refresh')
     domain = next(model for model in models.values() if model['name']=='CustomJS'
@@ -175,7 +208,7 @@ def refresh(source: Path, output: Path) -> dict:
     output.write_text(lazy_html(views,domain_args['present_mask']))
     receipt = dict(schema='amber-cohort-presentation-refresh-v2', source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                    output_sha256=hashlib.sha256(output.read_bytes()).hexdigest(), embedded_data_sha256=before,
-                   embedded_data_unchanged=True, recovery_views=len(modes), models=len(models),
+                   embedded_data_unchanged=True, data_comparison='Bokeh-decoded document', recovery_views=len(modes), models=len(models),
                    live_models_by_domain=counts, scientific_sources_verified=len(covered),
                    original_bytes=source.stat().st_size, output_bytes=output.stat().st_size, rescored=0)
     output.with_suffix('.receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')

@@ -9,7 +9,9 @@ from disk without a web server or network resources.
 
 Recovery and overlap filters use responsive columns. Selected tool/sample tags
 wrap into columns inside a 180-pixel scroll area. Narrow containers stack the
-selectors. Recovery defaults to `By sample`; `Total across selected samples`
+selectors. Tool and recovery-sample selectors provide Select all and Clear buttons.
+All six global domain choices remain visible, including domains absent from this
+truth set. Recovery defaults to `By sample`; `Total across selected samples`
 produces one `Sample=Total` row per selected tool, summing qualifying bins across
 selected observations. Strict AMBER completeness/purity thresholds and zero
 counts remain unchanged. Empty sample/tool selections produce no rows. These
@@ -25,7 +27,8 @@ python refresh_cohort_report.py accepted/index.html accepted/index-interactive.h
 
 The upgrader refuses an existing output path, preserves the original report,
 and does not run scoring or QC. It accepts the Bokeh 3.8.2 cohort schema,
-checks every scientific `ColumnDataSource` against the accepted document, and
+decodes the transport entities exactly once, matching Bokeh's standalone loader,
+then checks every scientific `ColumnDataSource` against the accepted document, and
 requires complete source coverage across domain views. Only the old toolbar's
 single domain-state source is replaced. The adjacent receipt records input and
 output SHA256, data equivalence, sizes and model counts. Keep the original
@@ -34,12 +37,14 @@ export receipt separate from the derivative presentation receipt.
 ## Focused validation
 
 ```sh
-python -m unittest test.test_recovered_genomes test.test_overlap test.test_cohort
+python -m unittest test.test_report_refresh test.test_recovered_genomes test.test_overlap test.test_cohort
 python test/validate_cohort_browser.py accepted/index-interactive.html
 ```
 
 The browser check needs development-only Selenium, Firefox and geckodriver.
-It checks wide/narrow layout bounds, bounded scrolling, selected-sample totals,
+It checks rendered metric tables and their dropdown callbacks, overlap selections
+against independently counted records, plot legends, ranking sorting, Select all/Clear
+buttons in both models, wide/narrow layout bounds, bounded scrolling, selected-sample totals,
 empty selections, model/tab/filter preservation, and release of old domain
 views. It writes an adjacent browser receipt. Report-only validation does not
 qualify a rebuilt production container or replace the paired pipeline microgate.
