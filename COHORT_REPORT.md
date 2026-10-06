@@ -3,8 +3,10 @@
 Cohort reports retain separate official and fractional models and all six tabs.
 The selected domain combination is a compressed, self-contained Bokeh document.
 Only that document is decompressed and rendered; switching domains removes the
-old views and document and restores the active model/tab and recovery/overlap
-controls. Modern browsers with `DecompressionStream` can open the HTML directly
+old views and document and restores the active model/tab and every tool/sample
+selection, including Metrics and Metrics per bin. Empty selections are retained.
+Choices unavailable in a domain view remain remembered until they return; a new
+explicit selection replaces that remembered choice. Modern browsers with `DecompressionStream` can open the HTML directly
 from disk without a web server or network resources.
 
 Recovery and overlap filters use responsive columns. Selected tool/sample tags
@@ -45,6 +47,7 @@ The browser check needs development-only Selenium, Firefox and geckodriver.
 It checks rendered metric tables and their dropdown callbacks, overlap selections
 against independently counted records, plot legends, ranking sorting, Select all/Clear
 buttons in both models, wide/narrow layout bounds, bounded scrolling, selected-sample totals,
-empty selections, model/tab/filter preservation, and release of old domain
+empty selections, every tool/sample selection across populated and empty domain
+views in both scoring models, model/tab/filter preservation, and release of old domain
 views. It writes an adjacent browser receipt. Report-only validation does not
 qualify a rebuilt production container or replace the paired pipeline microgate.

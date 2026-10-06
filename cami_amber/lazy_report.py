@@ -34,12 +34,54 @@ sequences spanning selected and excluded domains.</p><div id="status" role="stat
 <div id="cohort-view"></div><script>
 const bundles = ''' + json.dumps(views, separators=(',', ':')) + ''';
 const report = window.cohortReport = {ready:false, mask:null, root:null, controls:{}, timings:[], error:null};
-let activeViews = [], saved = null, busy = false, desired = ''' + str(present_mask) + ''';
+let activeViews = [], saved = null, busy = false, restoring = false, deferred = new Set(), desired = ''' + str(present_mask) + ''';
 function saveState(){
  if (!report.root) return null;
- const values = {};
- for (const [name, control] of Object.entries(report.controls)) values[name] = Array.isArray(control.value) ? [...control.value] : control.value;
+ // Keep remembered values for controls absent from an empty domain view.
+ const values = {...(saved?.values || {})};
+ for (const [name, control] of Object.entries(report.controls)) {
+  if (deferred.has(name)) continue;
+  values[name] = Array.isArray(control.value) ? [...control.value] : control.value;
+ }
  return {outer:report.root.active, inner:report.root.tabs.map(t=>t.child.active), values};
+}
+function registerControls(root){
+ const slug = text=>text.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+ const registered = new Set(Object.values(report.controls));
+ for(const model of root.tabs){
+  for(const tab of model.child.tabs){
+   for(const control of tab.child.references()){
+    if(control.type !== 'Select' || registered.has(control)) continue;
+    const key=slug(model.title)+'/'+slug(tab.title)+'/'+slug(control.title);
+    if(report.controls[key]) throw Error('Ambiguous report control: '+key);
+    report.controls[key]=control;
+    registered.add(control);
+   }
+  }
+ }
+ for(const [name,control] of Object.entries(report.controls)){
+  control.properties.value.change.connect(()=>{if(!restoring)deferred.delete(name);});
+ }
+}
+function restoreState(root){
+ if(!saved) return;
+ restoring=true;
+ deferred=new Set();
+ try{
+  root.active=saved.outer;
+  root.tabs.forEach((tab,i)=>tab.child.active=saved.inner[i]);
+  // Restore binners first: their callbacks rebuild the per-bin sample options.
+  const entries=Object.entries(saved.values).sort(([a],[b])=>Number(b.endsWith('/binner'))-Number(a.endsWith('/binner')));
+  for(const [name,value] of entries){
+   const control=report.controls[name];
+   if(!control) continue;
+   if(control.type==='Select'){
+    const options=control.options.map(option=>Array.isArray(option)?option[0]:option);
+    if(!options.includes(value)){deferred.add(name);continue;}
+   }
+   control.value=Array.isArray(value)?[...value]:value;
+  }
+ }finally{restoring=false;}
 }
 async function decode(encoded){
  const bytes=Uint8Array.from(atob(encoded), c=>c.charCodeAt(0));
@@ -71,11 +113,8 @@ async function load(){
    const root=activeViews[0].model, doc=root.document;
    report.root=root;
    report.controls=Object.fromEntries(Object.entries(item.controls).map(([k,id])=>[k,doc.get_model_by_id(id)]));
-   if(saved){
-    root.active=saved.outer;
-    root.tabs.forEach((tab,i)=>tab.child.active=saved.inner[i]);
-    for(const [name,value] of Object.entries(saved.values)) if(report.controls[name]) report.controls[name].value=value;
-   }
+   registerControls(root);
+   restoreState(root);
    report.mask=mask;
    report.timings.push({mask,milliseconds:performance.now()-started,models:doc._all_models.size});
   }

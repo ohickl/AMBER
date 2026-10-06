@@ -176,10 +176,44 @@ with webdriver.Firefox(options=options) as driver:
                 assert measured[1]['y'] > measured[0]['y'], measured
             assert all(row['listHeight'] is None or row['listHeight'] <= 180 for row in measured), measured
             widths.append(dict(width=width, tab=tab, controls=measured))
+    # Give both models different subsets, including empty selections, and test
+    # every sample/binner selector across populated and empty domain views.
+    driver.execute_script('''
+        window.expectedSelections={};
+        for(const model of ['official','fractional']){
+            control('recovery_tools',model).value=control('recovery_tools',model).options.slice(1,3);
+            control('recovery_samples',model).value=model==='official'?control('recovery_samples',model).options.slice(1,3):[];
+            control('overlap_tools',model).value=model==='official'?[]:control('overlap_tools',model).options.slice(0,2);
+            const overlap=control('overlap_sample',model);overlap.value=overlap.options[overlap.options.length-1];
+            const metrics=control('metrics/sample',model);metrics.value=metrics.options[metrics.options.length-1];
+            const binner=control('metrics_per_bin/binner',model);
+            if(binner){
+                binner.value=binner.options[binner.options.length-1];
+                const sample=control('metrics_per_bin/sample',model);
+                const option=sample.options[sample.options.length-1];
+                sample.value=Array.isArray(option)?option[0]:option;
+            }
+        }
+        for(const [key,item] of Object.entries(cohortReport.controls)){
+            if(item.type==='Select'||Array.isArray(item.value))expectedSelections[key]=item.value;
+        }
+        window.checkSelections=()=>{
+            for(const [key,expected] of Object.entries(expectedSelections)){
+                const item=cohortReport.controls[key];
+                if(!item)continue;
+                if(item.type==='Select'){
+                    const options=item.options.map(option=>Array.isArray(option)?option[0]:option);
+                    if(!options.includes(expected))continue;
+                }
+                if(JSON.stringify(item.value)!==JSON.stringify(expected))throw Error('Selection reset: '+key);
+            }
+        };
+    ''')
     driver.execute_script('''
         cohortReport.root.active=1;
         cohortReport.root.tabs[1].child.active=4;
         control('recovery_mode','fractional').value='Total across selected samples';
+        expectedSelections['fractional/recovery_mode']='Total across selected samples';
         control('overlap_contamination').value=35;
         window.selectedSamples=control('recovery_samples').value;
         const boxes=document.querySelectorAll('#domains input');
@@ -196,6 +230,7 @@ with webdriver.Firefox(options=options) as driver:
                          fractionalMode='Total across selected samples', samples=state['expected'],
                          expected=state['expected'], contamination=35, documents=1), state
     time.sleep(.4)
+    driver.execute_script("checkSelections()")
     driver.execute_script("checkTotals('official');checkTotals('fractional')")
     for mask in (0,present_mask,4 & present_mask,present_mask):
         driver.execute_script('''const boxes=document.querySelectorAll('#domains input');
@@ -205,9 +240,11 @@ with webdriver.Firefox(options=options) as driver:
         time.sleep(.2)
         assert driver.execute_script('return Bokeh.documents.length') == 1
         assert driver.execute_script('return Object.keys(Bokeh.index).length') == 2
-        driver.execute_script("checkTotals('official');checkTotals('fractional')")
-    receipt = dict(schema='cohort-browser-v3',initial_seconds=initial_seconds, metric_tables='pass',domain_choices=6,overlap_data='pass',plot_legends='pass',ranking_sort='pass',selection_buttons='pass',
+        driver.execute_script("checkSelections();checkTotals('official');checkTotals('fractional')")
+    # Every formerly absent selector must return with its original selection.
+    assert driver.execute_script("return Object.keys(expectedSelections).every(key=>!!cohortReport.controls[key])")
+    receipt = dict(schema='cohort-browser-v4',initial_seconds=initial_seconds, metric_tables='pass',domain_choices=6,overlap_data='pass',plot_legends='pass',ranking_sort='pass',selection_buttons='pass',
                    timings=driver.execute_script('return cohortReport.timings'),
-                   responsive=widths, totals='pass', empty_filters='pass', state_preserved='pass',live_documents=1)
+                   responsive=widths, totals='pass', empty_filters='pass', state_preserved='all_selectors_both_models',live_documents=1)
     Path(sys.argv[1]).with_suffix('.browser.json').write_text(json.dumps(receipt,indent=2)+'\n')
-    print(f'cohort-browser-v3 metric_tables=pass domain_choices=6 initial_seconds={initial_seconds:.2f} models=2 tabs=6 widths=1440,650 totals=pass domain_switch=pass live_documents=1')
+    print(f'cohort-browser-v4 metric_tables=pass domain_choices=6 initial_seconds={initial_seconds:.2f} models=2 tabs=6 widths=1440,650 totals=pass domain_switch=pass live_documents=1')
