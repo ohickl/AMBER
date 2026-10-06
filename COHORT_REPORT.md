@@ -6,7 +6,8 @@ Only that document is decompressed and rendered; switching domains removes the
 old views and document and restores the active model/tab and every tool/sample
 selection, including Metrics and Metrics per bin. Empty selections are retained.
 Choices unavailable in a domain view remain remembered until they return; a new
-explicit selection replaces that remembered choice. Modern browsers with `DecompressionStream` can open the HTML directly
+explicit selection replaces that remembered choice. Restoration waits for binner
+callbacks to rebuild sample options before applying the saved sample. Modern browsers with `DecompressionStream` can open the HTML directly
 from disk without a web server or network resources.
 
 Recovery and overlap filters use responsive columns. Selected tool/sample tags

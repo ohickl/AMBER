@@ -205,7 +205,7 @@ with webdriver.Firefox(options=options) as driver:
                     const options=item.options.map(option=>Array.isArray(option)?option[0]:option);
                     if(!options.includes(expected))continue;
                 }
-                if(JSON.stringify(item.value)!==JSON.stringify(expected))throw Error('Selection reset: '+key);
+                if(JSON.stringify(item.value)!==JSON.stringify(expected))throw Error('Selection reset: '+key+' mask='+cohortReport.mask+' expected='+JSON.stringify(expected)+' actual='+JSON.stringify(item.value));
             }
         };
     ''')

@@ -63,14 +63,16 @@ function registerControls(root){
   control.properties.value.change.connect(()=>{if(!restoring)deferred.delete(name);});
  }
 }
-function restoreState(root){
+async function restoreState(root){
  if(!saved) return;
  restoring=true;
  deferred=new Set();
  try{
   root.active=saved.outer;
   root.tabs.forEach((tab,i)=>tab.child.active=saved.inner[i]);
-  // Restore binners first: their callbacks rebuild the per-bin sample options.
+  // Bokeh CustomJS callbacks run asynchronously. Let binner callbacks rebuild
+  // sample options before restoring samples, and suppress deferred-choice edits
+  // until every restoration callback has settled.
   const entries=Object.entries(saved.values).sort(([a],[b])=>Number(b.endsWith('/binner'))-Number(a.endsWith('/binner')));
   for(const [name,value] of entries){
    const control=report.controls[name];
@@ -80,7 +82,9 @@ function restoreState(root){
     if(!options.includes(value)){deferred.add(name);continue;}
    }
    control.value=Array.isArray(value)?[...value]:value;
+   if(name.endsWith('/binner')) await new Promise(resolve=>setTimeout(resolve,0));
   }
+  await new Promise(resolve=>setTimeout(resolve,0));
  }finally{restoring=false;}
 }
 async function decode(encoded){
@@ -114,7 +118,7 @@ async function load(){
    report.root=root;
    report.controls=Object.fromEntries(Object.entries(item.controls).map(([k,id])=>[k,doc.get_model_by_id(id)]));
    registerControls(root);
-   restoreState(root);
+   await restoreState(root);
    report.mask=mask;
    report.timings.push({mask,milliseconds:performance.now()-started,models:doc._all_models.size});
   }
